@@ -205,6 +205,7 @@ class Payu_Shipping_Tax_Api_Calc
     {
         global $wpdb;
         $table_name = 'wp_woocommerce_sessions';
+        # Change this code to not construct SQL queries directly from user-controlled data which can lead to SQL injection.
         $wc_session_data = $wpdb->get_var("select session_value from $table_name where session_key = '$session_key'");
         $cart_data['cart'] = maybe_unserialize(maybe_unserialize($wc_session_data)['cart']);
 

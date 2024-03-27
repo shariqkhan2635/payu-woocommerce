@@ -1,0 +1,36 @@
+PHP CODE SNIFFER VIOLATION SOURCE SUMMARY
+----------------------------------------------------------------------------------------------------
+    STANDARD  CATEGORY            SNIFF                                                        COUNT
+----------------------------------------------------------------------------------------------------
+[x] Generic   White space         Scope indent incorrect exact                                 113
+[x] Squiz     Strings             Concatenation spacing padding found                          110
+[x] Squiz     Strings             Double quote usage not required                              64
+[x] Squiz     Control structures  Control signature space after keyword                        34
+[x] Generic   Functions           Function call argument spacing no space after comma          25
+[x] Generic   Control structures  Inline control structure not allowed                         22
+[ ] WordPres  PHP                 Yoda conditions not yoda                                     15
+[x] Squiz     Control structures  Control signature space after close parenthesis              11
+[x] Generic   Functions           Opening function brace kernighan ritchie space before brace  9
+[x] Squiz     Control structures  Control signature space after close brace                    8
+[x] Squiz     Functions           Function declaration argument spacing spacing after open     7
+[ ] Squiz     Scope               Method scope missing                                         7
+[x] Squiz     Functions           Function declaration argument spacing no space before arg    4
+[ ] WordPres  Security            Escape output output not escaped                             3
+[x] Generic   Functions           Opening function brace kernighan ritchie brace on new line   2
+[x] Generic   White space         Arbitrary parentheses spacing space after open               2
+[x] Generic   White space         Arbitrary parentheses spacing space before close             2
+[ ] Generic   Code analysis       Empty statement detected else                                1
+[ ] Generic   Code analysis       Empty statement detected if                                  1
+[x] Generic   Formatting          Space after cast no space                                    1
+[x] Generic   PHP                 Lower case keyword found                                     1
+[x] PSR2      Files               Closing tag not allowed                                      1
+[x] Squiz     Functions           Function declaration argument spacing space after equals     1
+[x] Squiz     Functions           Function declaration argument spacing space before equals    1
+[ ] WordPres  Date time           Restricted functions date_date                               1
+[ ] WordPres  Security            Nonce verification missing                                   1
+[ ] WordPres  Security            Validated sanitized input input not validated                1
+----------------------------------------------------------------------------------------------------
+A TOTAL OF 448 SNIFF VIOLATIONS WERE FOUND IN 27 SOURCES
+----------------------------------------------------------------------------------------------------
+PHPCBF CAN FIX THE 19 MARKED SOURCES AUTOMATICALLY (418 VIOLATIONS IN TOTAL)
+----------------------------------------------------------------------------------------------------

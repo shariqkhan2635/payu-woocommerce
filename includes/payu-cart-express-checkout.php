@@ -1,0 +1,305 @@
+<?php
+
+/**
+ * Payu Calculation Shipping and Tax cost.
+
+ */
+
+class Payu_Cart_Express_checkout
+{
+
+    protected $checkout_express;
+
+    protected $disable_checkout;
+
+    protected $payu_enable;
+
+    public function __construct()
+    {
+        $plugin_data = get_option('woocommerce_payubiz_settings');
+        $this->checkout_express = $plugin_data['checkout_express'];
+        $this->payu_enable = $plugin_data['enabled'];
+        $this->disable_checkout = $plugin_data['disable_checkout'];
+        if ($this->checkout_express == 'checkout_express' && $this->payu_enable == 'yes') {
+            add_action('woocommerce_proceed_to_checkout', array(&$this, 'add_payu_buy_now_button'));
+            add_action('woocommerce_widget_shopping_cart_buttons', array($this, 'add_payu_buy_now_button'), 20);
+            add_action('template_redirect',array($this,'cart_page_checkout_callback'));
+            add_action('wp_enqueue_scripts', array($this, 'checkout_nonce_enqueue_custom_scripts'));
+            add_action('wp_footer', array($this, 'wc_cart_reload_cart_page_on_calc_shipping'));
+            add_filter('woocommerce_billing_fields', array($this, 'payu_remove_required_fields_checkout'));
+            add_filter('woocommerce_billing_fields', array($this, 'payu_wc_unrequire_wc_phone_field'));
+            add_filter('woocommerce_default_address_fields', array($this, 'filter_default_address_fields'), 20, 1);
+            if ($this->disable_checkout == 'yes') {
+                add_action('init', array($this, 'payu_remove_checkout_button'));
+                add_action('template_redirect', array($this, 'payu_redirect_checkout_to_cart'));
+                add_action('init', array($this, 'remove_proceed_to_checkout_action'), 20);
+            }
+        }
+    }
+
+
+
+    public function add_payu_buy_now_button()
+    {
+        //wp_enqueue_script('custom-cart-script', get_template_directory_uri() . '/path/to/your/script.js', array('jquery'), '1.0', true);
+
+
+        wp_localize_script('custom-cart-script', 'wc_checkout_params', array(
+            'ajax_url' => WC()->ajax_url(),
+            'checkout_nonce' => wp_create_nonce('woocommerce-process_checkout')
+            // Add other parameters as needed
+        ));
+
+        $addresses = $this->get_user_checkout_details();
+        $billing_data = $addresses['billing'];
+
+?>
+        <a href="javascript:void(0);" class="checkout-button payu-checkout button alt wc-forward">Buy Now with Payu</a>
+        <script>
+            var site_url = '<?php echo get_site_url(); ?>';
+            jQuery(document).ready(function($) {
+                // Trigger the custom checkout AJAX call
+                jQuery(document).unbind('click').on('click', '.payu-checkout', function() {
+                    var data = {
+                        billing_alt: 0,
+                        billing_first_name: '<?php echo $billing_data['first_name']; ?>',
+                        billing_last_name: '<?php echo $billing_data['last_name']; ?>',
+                        billing_company: '<?php echo $billing_data['company']; ?>',
+                        billing_country: '<?php echo $billing_data['country']; ?>',
+                        billing_address_1: '<?php echo $billing_data['address_1']; ?>',
+                        billing_address_2: '',
+                        billing_city: '<?php echo $billing_data['city']; ?>',
+                        billing_state: '<?php echo $billing_data['state']; ?>',
+                        billing_postcode: '<?php echo $billing_data['postcode']; ?>',
+                        billing_phone: '<?php echo $billing_data['phone']; ?>',
+                        billing_email: '<?php echo $billing_data['email']; ?>',
+                        <?php if (isset($addresses['shipping'])) {
+                            $shipping_data = $addresses['shipping']; ?>
+                            shipping_first_name: '<?php echo $shipping_data['first_name']; ?>',
+                            shipping_last_name: '<?php echo $shipping_data['last_name']; ?>',
+                            shipping_company: '<?php echo $shipping_data['company']; ?>',
+                            shipping_country: '<?php echo $shipping_data['country']; ?>',
+                            shipping_address_1: '<?php echo $shipping_data['address_1']; ?>',
+                            shipping_address_2: '',
+                            shipping_phone: '<?php echo $shipping_data['phone']; ?>',
+                            shipping_city: '<?php echo $shipping_data['city']; ?>',
+                            shipping_state: '<?php echo $shipping_data['state']; ?>',
+                            shipping_postcode: '<?php echo $shipping_data['postcode']; ?>',
+                            ship_to_different_address: 1,
+                        <?php } ?>
+                        order_comments: '',
+                        payment_method: 'payubiz',
+                        _wp_http_referer: '/?wc-ajax=update_order_review',
+                        'woocommerce-process-checkout-nonce': wc_checkout_params.checkout_nonce, // Include the checkout nonce
+                    };
+                    console.log(data);
+                    jQuery.ajax({
+                        type: 'POST',
+                        url: '?wc-ajax=checkout',
+                        data: data,
+                        success: function(response) {
+                            // Handle the AJAX response
+                            console.log(response);
+                            if (response.result == 'success') {
+                                window.location = response.redirect;
+                            } else {
+
+                            }
+                            // You may redirect to the checkout page or perform other actions based on the response
+                        },
+                    });
+                });
+            });
+        </script>
+        <?php
+
+    }
+
+    private function get_user_checkout_details()
+    {
+
+        $customer_id = get_current_user_id();
+        $current_user_data = get_userdata($customer_id);
+        $wc_customer = WC()->cart->get_customer();
+        $billing_first_name = $wc_customer->get_billing_first_name();
+        $billing_last_name = $wc_customer->get_billing_last_name();
+        $billing_address = $wc_customer->get_billing_address();
+        $billing_company = $wc_customer->get_billing_company();
+        $billing_email = $wc_customer->get_billing_email();
+        $billing_phone = $wc_customer->get_billing_phone();
+        $billing_city = $wc_customer->get_billing_city();
+        $billing_country = $wc_customer->get_billing_country();
+        $billing_state = $wc_customer->get_billing_state();
+        $billing_postcode = $wc_customer->get_billing_postcode();
+
+        $shipping_first_name = $wc_customer->get_shipping_first_name();
+        $shipping_last_name = $wc_customer->get_shipping_last_name();
+        $shipping_address = $wc_customer->get_shipping_address();
+        $shipping_company = $wc_customer->get_shipping_company();
+        $shipping_email = $wc_customer->get_billing_email();
+        $shipping_phone = $wc_customer->get_shipping_phone();
+        $shipping_city = $wc_customer->get_shipping_city();
+        $shipping_country = $wc_customer->get_shipping_country();
+        $shipping_state = $wc_customer->get_shipping_state();
+        $shipping_postcode = $wc_customer->get_shipping_postcode();
+
+        $first_name = $billing_first_name ? $billing_first_name : $shipping_first_name;
+        $last_name = $billing_last_name;
+        $address_1 = $billing_address ? $billing_address : $shipping_address;
+        $company = $billing_company;
+        $email = $billing_email ? $billing_email : $current_user_data->user_email;
+        $city = $billing_city;
+        $country = $billing_country;
+        $state = $billing_state;
+        $postcode = $billing_postcode;
+        $billing_data = array(
+            'first_name' => $first_name ? $first_name : 'test',
+            'last_name' => $last_name ? $last_name : '',
+            'address_1' => $address_1 ? $address_1 : 'address',
+            'company' => $company ? $company : '',
+            'email' => $email ? $email : '',
+            'phone' => $billing_phone ? $billing_phone : '9999999999',
+            'city' => $city ? $city : '',
+            'country' => $country ? $country : 'IN',
+            'state' => $state ? $state : '',
+            'postcode' => $postcode ? $postcode : '',
+            'logged_in' => $customer_id ? true : false
+        );
+        $addresses['billing'] = $billing_data;
+        if ($shipping_first_name) {
+            $shipping_data = array(
+                'first_name' => $shipping_first_name,
+                'last_name' => $shipping_last_name,
+                'address_1' => $shipping_address ? $shipping_address : $billing_address,
+                'company' => $shipping_company,
+                'email' => $shipping_email,
+                'phone' => $shipping_phone,
+                'city' => $shipping_city,
+                'country' => $shipping_country,
+                'state' => $shipping_state,
+                'postcode' => $shipping_postcode
+            );
+            $addresses['shipping'] = $shipping_data;
+        }
+
+
+
+        return $addresses;
+    }
+
+    function checkout_nonce_enqueue_custom_scripts()
+    {
+        if (!is_checkout()) {
+            // Enqueue your script
+            wp_enqueue_script('custom-cart-script', plugins_url('assets/js/script.js', dirname(__FILE__)), array('jquery'), '');
+            // Pass parameters to the script
+            wp_localize_script('custom-cart-script', 'wc_checkout_params', array(
+                'ajax_url' => WC()->ajax_url(),
+                'checkout_nonce' => wp_create_nonce('woocommerce-process_checkout')
+                // Add other parameters as needed
+            ));
+        }
+    }
+
+    public function payu_remove_checkout_button()
+    {
+        // Optional: remove proceed to checkout button
+        remove_action('woocommerce_proceed_to_checkout', 'woocommerce_button_proceed_to_checkout', 20);
+    }
+
+    public function payu_redirect_checkout_to_cart()
+    {
+
+        if (is_checkout()) {
+            // Get the current URL
+            $current_url = home_url(add_query_arg(array(), $_SERVER['REQUEST_URI']));
+            $cart_url = wc_get_cart_url();
+            // Check if "/order-pay" is not present in the URL
+            if (strpos($current_url, '/order-pay') === false && strpos($current_url, '/order-received') === false) {
+                // User is on the checkout page without "/order-pay" in the URL
+                wp_redirect($cart_url);
+                exit;
+        ?>
+            <?php
+            }
+        }
+    }
+
+    public function payu_wc_unrequire_wc_phone_field($fields)
+    {
+        $fields['billing_phone']['required'] = false;
+        $fields['billing_postcode']['required'] = false;
+        $fields['billing_city']['required'] = false;
+        $fields['billing_last_name']['required'] = false;
+        $fields['billing_first_name']['required'] = false;
+        $fields['billing_email']['required'] = false;
+        $fields['billing_address_1']['required'] = false;
+        $fields['billing_email']['required'] = false;
+        return $fields;
+    }
+
+    public function filter_default_address_fields($address_fields)
+    {
+        // Only on checkout page
+
+        // All field keys in this array
+        $key_fields = array('country', 'first_name', 'last_name', 'company', 'address_1', 'address_2', 'city', 'state', 'postcode');
+
+        // Loop through each address fields (billing and shipping)
+        foreach ($key_fields as $key_field) {
+            $address_fields[$key_field]['required'] = false;
+        }
+
+        return $address_fields;
+    }
+
+    public function remove_proceed_to_checkout_action()
+    {
+        remove_action('woocommerce_widget_shopping_cart_buttons', 'woocommerce_widget_shopping_cart_proceed_to_checkout', 20);
+    }
+
+    public function wc_cart_reload_cart_page_on_calc_shipping()
+    {
+        if (is_cart()) :
+            ?>
+            <script type="text/javascript">
+                jQuery(function($) {
+                    jQuery(document).on('submit', '.woocommerce-shipping-calculator', function() {
+                        jQuery(document).ajaxStop(function() {
+                            window.location = '<?php echo wc_get_cart_url(); ?>';
+                        });
+                    });
+                });
+            </script>
+<?php
+        endif;
+    }
+
+    public function payu_remove_required_fields_checkout($fields)
+    {
+        if (is_cart()) :
+            $fields['billing_first_name']['required'] = false;
+            $fields['billing_last_name']['required'] = false;
+            $fields['billing_phone']['required'] = false;
+            $fields['billing_email']['required'] = false;
+            $fields['billing_country']['required'] = false;
+            $fields['billing_state']['required'] = false;
+            $fields['billing_postcode']['required'] = false;
+            $fields['billing_address_1']['required'] = false;
+            $fields['billing_city']['required'] = false;
+        endif;
+        return $fields;
+    }
+
+    public function cart_page_checkout_callback(){
+        if ( is_page( 'cart' ) || is_cart() ) {
+            // Pass parameters to the script
+            $guest_checkout_enabled = get_option('woocommerce_enable_guest_checkout');
+            if ($guest_checkout_enabled == 'no') {
+                allow_to_checkout_from_cart('change', $guest_checkout_enabled);
+            }
+        }
+    }
+}
+
+new Payu_Cart_Express_checkout();

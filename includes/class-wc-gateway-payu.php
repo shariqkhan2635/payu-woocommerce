@@ -291,7 +291,9 @@ class WC_Payubiz extends WC_Payment_Gateway
 				'var1' => $txnid,
 				'hash' => ''
 			);
+			# Change this code to not log user sensitive data - 'salt'
 			error_log("hash data " . $fields['key'] . '|' . $fields['command'] . '|' . $fields['var1'] . '|' . $payu_salt);
+			# Change this code to not log user sensitive data - 'salt'
 			$hash = hash("sha512", $fields['key'] . '|' . $fields['command'] . '|' . $fields['var1'] . '|' . $payu_salt);
 			$fields['hash'] = sanitize_text_field($hash);
 			error_log('mode =' . $this->gateway_module);

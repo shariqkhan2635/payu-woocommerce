@@ -5,7 +5,9 @@ function payu_get_pages($title = false, $indent = true)
 {
 	$wp_pages = get_pages('sort_column=menu_order');
 	$page_list = array();
-	if ($title) $page_list[] = $title;
+	if ($title) {
+		$page_list[] = $title;
+	}
 	foreach ($wp_pages as $page) {
 		$prefix = '';
 		// show indented child pages?
@@ -23,12 +25,21 @@ function payu_get_pages($title = false, $indent = true)
 	return $page_list;
 }
 
-function payu_insert_event_logs($request_type, $method, $url, $request_header, $request_data, $status, $response_header, $response_data)
+function payu_insert_event_logs($args_log)
 {
 	global $table_prefix, $wpdb;
 	$tblname = 'payu_event_logs';
 	$wp_payu_table = $table_prefix . "$tblname";
-	$table_data = array('request_type' => $request_type, 'request_method' => $method, 'request_url' => $url, 'request_headers' => serialize($request_header), 'request_data' => serialize($request_data), 'response_status' => $status, 'response_headers' => serialize($response_header), 'response_data' => serialize($response_data));
+	$table_data = array(
+		'request_type' => $args_log['request_type'],
+		'request_method' => $args_log['method'],
+		'request_url' => $args_log['url'],
+		'request_headers' => serialize($args_log['request_header']),
+		'request_data' => serialize($args_log['request_data']),
+		'response_status' => $args_log['status'],
+		'response_headers' => serialize($args_log['response_header']),
+		'response_data' => serialize($args_log['response_data'])
+	);
 	if (!$wpdb->insert($wp_payu_table, $table_data)) {
 		error_log('event log data insert error =', $wpdb->last_error);
 	}
@@ -58,7 +69,7 @@ function shift_element_after_assoc($array, $keyToShift, $keyAfter)
 	return $array;
 }
 
-function create_user_and_login_if_not_exist($email)
+function create_user_and_login_if_not_exist($email, $login = true)
 {
 	// Check if the user already exists
 	$user = get_user_by('email', $email);
@@ -68,7 +79,7 @@ function create_user_and_login_if_not_exist($email)
 		$user_id = wp_create_user($email, $password, $email);
 
 		// Check if user creation was successful
-		if (!is_wp_error($user_id)) {
+		if (!is_wp_error($user_id) && $login) {
 			// User created successfully, log in the user
 			$user = get_user_by('id', $user_id);
 			wp_set_current_user($user_id, $user->user_login);
@@ -158,7 +169,7 @@ function get_customer_address_payu($user_id)
 	$shipping_country = $user->get_shipping_country();
 	$shipping_phone = $user->get_shipping_phone();
 	//$shipping_email = $user->get_shipping
-	$customer_address = array(
+	return array(
 		'billing' => array(
 			'billing_first_name' => $billing_first_name,
 			'billing_last_name' => $billing_last_name,
@@ -184,22 +195,78 @@ function get_customer_address_payu($user_id)
 			'shipping_email' => ''
 		)
 	);
-	return $customer_address;
 }
 
-function allow_to_checkout_from_cart($mode,$current_guest_checkout = ''){
-	
-	if($mode == 'change'){
-		add_option('woocommerce_enable_guest_checkout_old',$current_guest_checkout);
-		update_option('woocommerce_enable_guest_checkout','yes');
-	} else if ($mode == 'revert'){
+function allow_to_checkout_from_cart($mode, $current_guest_checkout = '')
+{
+
+	if ($mode == 'change') {
+		add_option('woocommerce_enable_guest_checkout_old', $current_guest_checkout);
+		update_option('woocommerce_enable_guest_checkout', 'yes');
+	} else if ($mode == 'revert') {
 		$woocommerce_guest_checkout_old_val = get_option('woocommerce_enable_guest_checkout_old');
-		
-		if($woocommerce_guest_checkout_old_val){
-			update_option('woocommerce_enable_guest_checkout',$woocommerce_guest_checkout_old_val);
-			delete_option('woocommerce_enable_guest_checkout_old',$current_guest_checkout);
-		}
 
+		if ($woocommerce_guest_checkout_old_val) {
+			update_option('woocommerce_enable_guest_checkout', $woocommerce_guest_checkout_old_val);
+			delete_option('woocommerce_enable_guest_checkout_old', $current_guest_checkout);
+		}
 	}
-	
 }
+
+function payment_array_insert(&$array, $position, $insert)
+{
+	if (is_int($position)) {
+		array_splice($array, $position, 0, $insert);
+	} else {
+		$pos   = array_search($position, array_keys($array));
+		$array = array_merge(
+			array_slice($array, 0, $pos),
+			$insert,
+			array_slice($array, $pos)
+		);
+	}
+}
+
+function get_payu_coupon_value($order)
+{
+	// Payu Coupon Discount value
+	$payu_discount_value = 0;
+
+	$fee_items = $order->get_items(array('fee'));
+	$payu_discount_item_id = $order->get_meta('payu_discount_item_id');
+	foreach ($fee_items as $fee_id => $fee) {
+
+		if (isset($payu_discount_item_id) && $fee_id == $payu_discount_item_id) {
+			$payu_discount_value = $fee->get_total();
+		}
+	}
+
+	return $payu_discount_value;
+}
+
+
+function payu_transaction_data_insert($postdata, $order_id)
+	{
+		global $table_prefix, $wpdb;
+		$tblname = 'payu_transactions';
+		$wp_payu_table = $table_prefix . "$tblname";
+		$check_order_id = $wpdb->get_var("select order_id from $wp_payu_table where order_id = $order_id");
+		if (!$check_order_id) {
+			$transaction_id = $postdata['mihpayid'];
+			$status = $postdata['status'];
+			$response_data_serialize = serialize($postdata);
+			$data = array(
+				'transaction_id' => $transaction_id,
+				'order_id' => $order_id,
+				'payu_response' => $response_data_serialize,
+				'status' => $status
+			);
+			if ($wpdb->insert($wp_payu_table, $data)) {
+				return $postdata;
+			} else {
+				return false;
+			}
+		} else {
+			return true;
+		}
+	}

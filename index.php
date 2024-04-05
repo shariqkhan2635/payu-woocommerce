@@ -17,58 +17,58 @@ if (!defined('ABSPATH')) {
  * This action is documented in includes/class-payu-activator.php
  */
 
-function activate_payu()
+function activatePayu()
 {
 	require_once plugin_dir_path(__FILE__) . 'includes/class-payu-activator.php';
-	Payu_Activator::activate();
+	PayuActivator::activate();
 }
 
-register_activation_hook(__FILE__, 'activate_payu');
+register_activation_hook(__FILE__, 'activatePayu');
 
-include_once(plugin_dir_path(__FILE__) . 'includes/constant.php');
+require_once plugin_dir_path(__FILE__) . 'includes/constant.php';
 
-include_once(plugin_dir_path(__FILE__) . 'includes/helper.php');
+require_once plugin_dir_path(__FILE__) . 'includes/helper.php';
 
-include_once(plugin_dir_path(__FILE__) . 'includes/payu-payment-gateway-api.php');
+require_once plugin_dir_path(__FILE__) . 'includes/payu-payment-gateway-api.php';
 
-include_once(plugin_dir_path(__FILE__) . 'includes/payu-refund-process.php');
+require_once plugin_dir_path(__FILE__) . 'includes/payu-refund-process.php';
 
-include_once(plugin_dir_path(__FILE__) . 'includes/payu-cart-express-checkout.php');
+require_once plugin_dir_path(__FILE__) . 'includes/payu-cart-express-checkout.php';
 
+add_action('plugins_loaded', 'woocommercePayubizInit', 0);
 
-//$payu_register_webhook->register_webhook();
-
-add_action('plugins_loaded', 'woocommerce_payubiz_init', 0);
-
-function woocommerce_payubiz_init()
+function woocommercePayubizInit()
 {
 
-	if (!class_exists('WC_Payment_Gateway')) return;
+	if (!class_exists('WC_Payment_Gateway')) {
+		return null;
+	}
 
 	/**
 	 * Localisation
 	 */
 
-	if (isset($_GET['msg'])) {
-		if (sanitize_text_field($_GET['msg']) != '')
-			add_action('the_content', 'showpayubizMessage');
+	if (isset($_GET['msg']) && sanitize_text_field($_GET['msg']) != '') {
+		add_action('the_content', 'showpayubizMessage');
 	}
 
 	function showpayubizMessage($content)
 	{
-		return '<div class="box ' . sanitize_text_field($_GET['type']) . '-box">' . esc_html__(sanitize_text_field($_GET['msg']), 'payubiz') . '</div>' . $content;
+		return '<div class="box ' . sanitize_text_field($_GET['type']) . '-box">' .
+			esc_html__(sanitize_text_field($_GET['msg']), 'payubiz') .
+			'</div>' . $content;
 	}
 	static $plugin;
 
 	if (!isset($plugin)) {
 
-		class WC_Payu
+		class WcPayu
 		{
 
 			/**
 			 * The *Singleton* instance of this class
 			 *
-			 * @var WC_Payu
+			 * @var WcPayu
 			 */
 
 			public function __construct()
@@ -82,9 +82,9 @@ function woocommerce_payubiz_init()
 			/**
 			 * Returns the *Singleton* instance of this class.
 			 *
-			 * @return WC_Payu The *Singleton* instance.
+			 * @return WcPayu The *Singleton* instance.
 			 */
-			public static function get_instance()
+			public static function getInstance()
 			{
 				if (null === self::$instance) {
 					self::$instance = new self();
@@ -99,27 +99,28 @@ function woocommerce_payubiz_init()
 			 */
 			public function init()
 			{
+				require_once dirname(__FILE__) . '/includes/class-payu-payment-validation.php';
 				require_once dirname(__FILE__) . '/includes/class-wc-gateway-payu.php';
-				add_filter('woocommerce_payment_gateways', [$this, 'add_gateways']);
+				add_filter('woocommerce_payment_gateways', [$this, 'addGateways']);
 				require_once dirname(__FILE__) . '/includes/class-payu-shipping-tax-api-calculation.php';
-				require_once(plugin_dir_path(__FILE__) . 'includes/class-payu-verify-payment.php');
-				require_once(plugin_dir_path(__FILE__) . 'includes/class-payu-account-address-sync.php');
-				require_once(plugin_dir_path(__FILE__) . 'includes/admin/payu-webhook-calls.php');
+				require_once plugin_dir_path(__FILE__) . 'includes/class-payu-verify-payment.php';
+				require_once plugin_dir_path(__FILE__) . 'includes/class-payu-account-address-sync.php';
+				require_once plugin_dir_path(__FILE__) . 'includes/admin/payu-webhook-calls.php';
 			}
 
 			/**
 			 * Add the gateways to WooCommerce.
 			 */
 
-			public function add_gateways($methods)
+			public function addGateways($methods)
 			{
-				$methods[] = WC_Payubiz::class;
+				$methods[] = WcPayubiz::class;
 
 				return $methods;
 			}
 		}
 
-		$plugin = WC_Payu::get_instance();
+		$plugin = WcPayu::getInstance();
 	}
 
 	return $plugin;

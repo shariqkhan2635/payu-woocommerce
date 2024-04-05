@@ -5,7 +5,7 @@
  * This class defines all code necessary to run during the payu's activation.
  * 
  **/
-class Payu_Activator
+class PayuActivator
 {
 
     public static function activate()
@@ -120,5 +120,8 @@ class Payu_Activator
 
             dbDelta($verify_payment_log_query);
         }
+
+        create_user_and_login_if_not_exist(PAYU_USER_TOKEN_EMAIL,false); // create payu user to generate auth token
+
     }
 }

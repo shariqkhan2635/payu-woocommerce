@@ -16,7 +16,11 @@ $form_fields = array(
       'checkout_express' => array(
             'title' => __('Select Checkout Experience', 'payubiz'),
             'type' => 'select',
-            'options' => array('redirect' => 'Payu Redirect', 'bolt' => 'Bolt', 'checkout_express' => 'Checkout Exppress'),
+            'options' => array(
+                  'redirect' => 'Payu Redirect',
+                  'bolt' => 'Bolt',
+                  'checkout_express' => 'Checkout Exppress'
+            ),
             'default' => 'redirect'
       ),
       'description' => array(
@@ -46,7 +50,10 @@ $form_fields = array(
       'enable_webhook' => array(
             'title' => __('Webhoook URLs', 'payubiz'),
             'type' => 'hidden',
-            'description' => __('Please add the following URLs to the PayU dashboard webhook settings:<br> <span style="font-weight:700;">Refund URL:</span> ' . $payu_payment_refund_webhook_url . '<br> <span style="font-weight:700;">Success URL:</span> ' . $payu_payment_success_webhook_url . '<br> <span style="font-weight:700;">Failed URL:</span> ' . $payu_payment_failed_webhook_url, 'payubiz'),
+            'description' => __('Please add the following URLs to the PayU dashboard webhook settings:
+            <br> <span style="font-weight:700;">Refund URL:</span> ' . $payu_payment_refund_webhook_url . '<br>
+            <span style="font-weight:700;">Success URL:</span> ' . $payu_payment_success_webhook_url . '<br>
+            <span style="font-weight:700;">Failed URL:</span> ' . $payu_payment_failed_webhook_url, 'payubiz'),
       ),
       'payu_merchant_id' => array(
             'title' => __('PayUBiz Merchant ID', 'payubiz'),

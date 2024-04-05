@@ -1,6 +1,6 @@
 <?php
 
-class Payu_Payment_Gateway_API
+class PayuPaymentGatewayAPI
 {
     protected $payu_merchant_id;
 
@@ -26,6 +26,7 @@ class Payu_Payment_Gateway_API
     protected function payu_process_payment_refund($order, $amount = false)
     {
         global $table_prefix, $wpdb;
+        $result = false;
 
         try {
             $plugin_data = get_option('woocommerce_payubiz_settings');
@@ -52,12 +53,20 @@ class Payu_Payment_Gateway_API
                     'hash' => ''
                 );
 
-                $hash = hash("sha512", $fields['key'] . '|' . $fields['command'] . '|' . $fields['var1'] . '|' . $this->payu_salt);
+                $hash = hash(
+                    "sha512",
+                    $fields['key'] . '|' .
+                        $fields['command'] . '|' .
+                        $fields['var1'] . '|' .
+                        $this->payu_salt
+                );
+
                 $fields['hash'] = sanitize_text_field($hash);
-                //$fields_string = http_build_query($fields);
                 $url = esc_url(PAYU_POSTSERVICE_FORM_2_URL_PRODUCTION);
-                if ($this->gateway_module == 'sandbox')
+                if ($this->gateway_module == 'sandbox') {
                     $url = esc_url(PAYU_POSTSERVICE_FORM_2_URL_UAT);
+                }
+
 
                 $args = array(
                     'body' => $fields,
@@ -69,23 +78,36 @@ class Payu_Payment_Gateway_API
                 $response = wp_remote_post($url, $args);
                 $response_code = wp_remote_retrieve_response_code($response);
                 $headerResult = wp_remote_retrieve_headers($response);
+                $args_log = array(
+                    'request_type' => 'outgoing',
+                    'method' => 'post',
+                    'url' => $url,
+                    'request_headers' => $args['headers'],
+                    'request_data' => $fields,
+                    'status' => $response_code,
+                    'response_headers' => $headerResult,
+                    'response_data' => 'null'
+                );
 
                 if (!isset($response['body'])) {
                     error_log("refund error body: " . serialize($response));
-                    payu_insert_event_logs('outgoing', 'post', $url, $args['headers'], $fields, $response_code, $headerResult, 'null');
-                    return false;
+
+                    payu_insert_event_logs($args_log);
+                    $result = false;
                 } else {
                     $res = json_decode(sanitize_text_field($response['body']), true);
-                    payu_insert_event_logs('outgoing', 'post', $url, $args['headers'], $fields, $response_code, $headerResult, $res);
-                    return $res;
+                    $args_log['response_data'] = $res;
+                    payu_insert_event_logs($args_log);
+                    $result = $res;
                 }
             } else {
-                return false;
+                $result = false;
             }
         } catch (Throwable $e) {
             error_log("refund error: " . $e->getMessage());
-            return false;
+            $result = false;
         }
+        return $result;
     }
 
     protected function payu_refund_status($order)
@@ -94,12 +116,22 @@ class Payu_Payment_Gateway_API
         try {
 
             $order_id = $order->ID;
-            $amount = $order->get_total();
             $wc_orders = 'wc_orders';
             $wp_order_table = $table_prefix . "$wc_orders ";
             $payu_refund_transactions = 'payu_refund_transactions';
             $wp_refund_transactions_table = $table_prefix . "$payu_refund_transactions ";
-            $request_id = $wpdb->get_var("SELECT rf.request_id FROM $wp_order_table as wo join $wp_refund_transactions_table as rf on rf.order_id = wo.id WHERE wo.id = '$order_id' AND wo.status LIKE 'wc-refund-progress' AND wo.type LIKE 'shop_order' AND rf.status = 'processed'");
+
+            $request_id = $wpdb->get_var(
+                "SELECT rf.request_id
+                FROM $wp_order_table as wo
+                join $wp_refund_transactions_table as rf
+                on rf.order_id = wo.id
+                WHERE wo.id = '$order_id'
+                AND wo.status LIKE 'wc-refund-progress'
+                AND wo.type LIKE 'shop_order'
+                AND rf.status = 'processed'"
+            );
+
             if ($request_id) {
                 $fields = array(
                     'key' => sanitize_key($this->payu_key),
@@ -108,37 +140,32 @@ class Payu_Payment_Gateway_API
                     'var2' => uniqid(),
                     'hash' => ''
                 );
-                $hash = hash("sha512", $fields['key'] . '|' . $fields['command'] . '|' . $fields['var1'] . '|' . $this->payu_salt);
+                $hash = hash(
+                    "sha512",
+                    $fields['key'] . '|' .
+                        $fields['command'] . '|' .
+                        $fields['var1'] . '|' .
+                        $this->payu_salt
+                );
                 $fields['hash'] = sanitize_text_field($hash);
-                //$fields_string = http_build_query($fields);
                 $url = esc_url(PAYU_POSTSERVICE_FORM_2_URL_PRODUCTION);
-                if ($this->gateway_module == 'sandbox')
+                if ($this->gateway_module == 'sandbox') {
                     $url = esc_url(PAYU_POSTSERVICE_FORM_2_URL_UAT);
+                }
+
 
                 $args = array(
                     'body' => $fields,
                     'timeout' => '5',
                     'redirection' => '5',
-                    'headers'     => array('Content-Type' => 'application/x-www-form-urlencoded'),
+                    'headers'     => array('Content-Type' => CURL_CONTENT_TYPE),
                 );
 
                 $response = wp_remote_post($url, $args);
                 if (!isset($response['body'])) {
                     return false;
                 } else {
-                    $res = json_decode(sanitize_text_field($response['body']), true);
-                    return $res;
-                    // if(!isset($res['status']))
-                    //     return false;
-                    // else{
-                    //     $res = $res['transaction_details'];
-                    //     $res = $res[$payu_response_data->transaction_id];						
-
-                    //     if(sanitize_text_field($res['status']) == 'success')	
-                    //         return true;					
-                    //     elseif(sanitize_text_field($res['status']) == 'pending' || sanitize_text_field($res['status']) == 'failure')
-                    //         return false;
-                    // }
+                    return json_decode(sanitize_text_field($response['body']), true);
                 }
             }
         } catch (Throwable $e) {
@@ -146,61 +173,63 @@ class Payu_Payment_Gateway_API
         }
     }
 
-    protected function payu_refund_status_check($request_id, $status = 'success')
+    protected function payu_refund_status_check($request_id)
     {
-        global $table_prefix, $wpdb;
+        global $wpdb;
+        $result = false;
         try {
+            if (!$request_id) {
+                $result = false;
+            }
 
+            $fields = array(
+                'key' => sanitize_key($this->payu_key),
+                'command' => 'check_action_status',
+                'var1' => $request_id,
+                'var2' => uniqid(),
+                'hash' => ''
+            );
 
-            if ($request_id) {
-                $fields = array(
-                    'key' => sanitize_key($this->payu_key),
-                    'command' => 'check_action_status',
-                    'var1' => $request_id,
-                    'var2' => uniqid(),
-                    'hash' => ''
-                );
-                $hash = hash("sha512", $fields['key'] . '|' . $fields['command'] . '|' . $fields['var1'] . '|' . $this->payu_salt);
-                $fields['hash'] = sanitize_text_field($hash);
-                //$fields_string = http_build_query($fields);
-                $url = esc_url(PAYU_POSTSERVICE_FORM_2_URL_PRODUCTION);
-                if ($this->gateway_module == 'sandbox')
-                    $url = esc_url(PAYU_POSTSERVICE_FORM_2_URL_UAT);
+            $hash = hash("sha512", $fields['key'] . '|' .
+                $fields['command'] . '|' .
+                $fields['var1'] . '|' .
+                $this->payu_salt);
+            $fields['hash'] = sanitize_text_field($hash);
+            $url = esc_url($this->gateway_module == 'sandbox' ?
+                PAYU_POSTSERVICE_FORM_2_URL_UAT :
+                PAYU_POSTSERVICE_FORM_2_URL_PRODUCTION);
 
-                $args = array(
-                    'body' => $fields,
-                    'timeout' => '5',
-                    'redirection' => '5',
-                    'headers'     => array('Content-Type' => 'application/x-www-form-urlencoded'),
-                );
+            $args = array(
+                'body' => $fields,
+                'timeout' => 5,
+                'redirection' => 5,
+                'headers' => array('Content-Type' => CURL_CONTENT_TYPE),
+            );
 
-                $response = wp_remote_post($url, $args);
-                if (!isset($response['body'])) {
-                    return false;
-                } else {
-                    $refund_result = json_decode(sanitize_text_field($response['body']), true);
-                    if ($refund_result && $refund_result['status'] == 1) {
+            $response = wp_remote_post($url, $args);
 
-                        foreach ($refund_result['transaction_details'] as $transaction_detail_data) {
+            if (!isset($response['body'])) {
+                $result = false;
+            }
 
-                            foreach ($transaction_detail_data as $transaction_detail) {
-                                $status = $transaction_detail['status'];
-                                if ($transaction_detail['status'] == $status) {
-                                    return true;
-                                } else {
-                                    return false;
-                                }
-                            }
-                        }
-                    } else {
-                        return false;
+            $refund_result = json_decode(sanitize_text_field($response['body']), true);
+
+            if ($refund_result && $refund_result['status'] == 1) {
+                foreach ($refund_result['transaction_details'] as $transaction_detail_data) {
+                    foreach ($transaction_detail_data as $transaction_detail) {
+                        $refund_status = $transaction_detail['status'];
+                        $result = $transaction_detail['status'] == $refund_status;
                     }
                 }
+            } else {
+                $result = false;
             }
         } catch (Throwable $e) {
-            return false;
+            $result = false;
         }
+        return $result;
     }
+
 
     protected function payu_refund_all_status($request_id)
     {
@@ -213,74 +242,37 @@ class Payu_Payment_Gateway_API
                 'var2' => uniqid(),
                 'hash' => ''
             );
-            $hash = hash("sha512", $fields['key'] . '|' . $fields['command'] . '|' . $fields['var1'] . '|' . $this->payu_salt);
+            $hash = hash(
+                "sha512",
+                $fields['key'] . '|' .
+                    $fields['command'] . '|' .
+                    $fields['var1'] . '|' .
+                    $this->payu_salt
+            );
             $fields['hash'] = sanitize_text_field($hash);
-            //$fields_string = http_build_query($fields);
             $url = esc_url(PAYU_POSTSERVICE_FORM_2_URL_PRODUCTION);
-            if ($this->gateway_module == 'sandbox')
+            if ($this->gateway_module == 'sandbox') {
                 $url = esc_url(PAYU_POSTSERVICE_FORM_2_URL_UAT);
+            }
+
 
             $args = array(
                 'body' => $fields,
                 'timeout' => '5',
                 'redirection' => '5',
-                'headers'     => array('Content-Type' => 'application/x-www-form-urlencoded'),
+                'headers'     => array('Content-Type' => CURL_CONTENT_TYPE),
             );
             $response = wp_remote_post($url, $args);
             if (!isset($response['body'])) {
                 return false;
             } else {
-                $res = json_decode(sanitize_text_field($response['body']), true);
-                return $res;
+                return json_decode(sanitize_text_field($response['body']), true);
             }
         } catch (Throwable $e) {
             return false;
         }
     }
 
-    // protected function payu_register_webhook_api($register_refund_webhook,$api_url,$reseller_uuid){
-
-    //  //   $result = $this->payu_get_token_api();
-
-    //     if($result){
-    //         $result_data = json_decode($result);
-    //         if(isset($result_data->access_token)){
-    //             $headers = array(
-    //                 'Authorization' => 'Bearer '.$result_data->access_token,
-    //                 'payoutMerchantId' => '8245446',
-    //                 'Content-Type' => 'application/json',
-    //             );
-
-    //             $body = array(
-    //                 array(
-    //                     'webhook' => 'transfer_reversed',
-    //                     'values' => array(
-    //                         'url' => $register_refund_webhook,
-    //                         'authorization' => 'asjafya56%^eyy63547ysrt4',
-    //                     ),
-    //                 ),
-    //             );
-
-    //             $response = wp_remote_post(
-    //                 $api_url,
-    //                 array(
-    //                     'headers' => $headers,
-    //                     'body' => json_encode($body),
-    //                 )
-    //             );
-    //             if (is_wp_error($response)) {
-    //                 //return 'Error: ' . $response->get_error_message();
-    //                 return false;
-    //             } else {
-    //                 $body = wp_remote_retrieve_body($response);
-    //                 return $body;
-    //             }
-    //         }
-
-    //     }
-
-
-    // }
 
     protected function payu_save_address($address, $address_type, $user_id)
     {
@@ -293,13 +285,15 @@ class Payu_Payment_Gateway_API
             if (!empty($token_data)) {
                 // // URL for the POST request
                 $url = PAYU_ADDRESS_API_URL;
-                if ($this->gateway_module == 'sandbox')
+                if ($this->gateway_module == 'sandbox') {
                     $url = PAYU_ADDRESS_API_URL_UAT;
+                }
+
 
                 $token = $token_data->access_token;
                 // Request headers
                 $headers = array(
-                    'Content-Type' => 'application/json',
+                    'Content-Type' => CURL_CONTENT_TYPE_JSON,
                     'Authorization' => 'Bearer ' . $token,
                 );
 
@@ -338,13 +332,24 @@ class Payu_Payment_Gateway_API
                 $response_code = wp_remote_retrieve_response_code($response);
                 $headerResult = wp_remote_retrieve_headers($response);
                 // Check for errors
+                $args_log = array(
+                    'request_type' => 'outgoing',
+                    'method' => 'post',
+                    'url' => $url,
+                    'request_headers' => $headers,
+                    'request_data' => $body,
+                    'status' => $response_code,
+                    'response_headers' => $headerResult,
+                    'response_data' => 'null'
+                );
                 if (is_wp_error($response)) {
                     echo 'Error: ' . $response->get_error_message();
-                    payu_insert_event_logs('outgoing', 'post', $url, $headers, $body, $response_code, $headerResult, 'null');
+                    payu_insert_event_logs($args_log);
                 } else {
                     // Process response
                     $response_body = wp_remote_retrieve_body($response);
-                    payu_insert_event_logs('outgoing', 'post', $url, $headers, $body, $response_code, $headerResult, $response_body);
+                    $args_log['response_data'] = $response_body;
+                    payu_insert_event_logs($args_log);
                     error_log('request address payu =' . $body);
                     error_log('save address payu =' . $response_body);
                     error_log('token =' . $token);
@@ -352,7 +357,7 @@ class Payu_Payment_Gateway_API
                 }
             }
         } catch (Throwable $e) {
-            error_log('error =' . $e->getMessage());
+            error_log('save address error ' . $e->getMessage());
             return false;
         }
     }
@@ -370,17 +375,19 @@ class Payu_Payment_Gateway_API
         try {
             if (!empty($token_data)) {
                 $url = PAYU_ADDRESS_API_URL;
-                if ($this->gateway_module == 'sandbox')
+                if ($this->gateway_module == 'sandbox') {
                     $url = PAYU_ADDRESS_API_URL_UAT;
+                }
+
 
                 $token = $token_data->access_token;
                 // Request headers
                 $headers = array(
-                    'Content-Type' => 'application/json',
+                    'Content-Type' => CURL_CONTENT_TYPE_JSON,
                     'Authorization' => 'Bearer ' . $token,
                 );
 
-
+                $name = $address[$address_type . '_first_name'] . ' ' . $address[$address_type . '_last_name'];
                 // Request body
                 $body = json_encode(array(
                     'merchantId' => $this->payu_merchant_id,
@@ -388,7 +395,7 @@ class Payu_Payment_Gateway_API
                     'userId' => $payu_user_id,
                     'shippingAddress' => array(
                         'id' => $payu_address_id,
-                        'name' => $address[$address_type . '_first_name'] . ' ' . $address[$address_type . '_last_name'],
+                        'name' => $name,
                         'email' => $address[$address_type . '_email'],
                         'addressLine' => $address[$address_type . '_address_1'],
                         'addressLine2' => $address[$address_type . '_address_2'],
@@ -418,13 +425,24 @@ class Payu_Payment_Gateway_API
                 $response_code = wp_remote_retrieve_response_code($response);
                 $headerResult = wp_remote_retrieve_headers($response);
                 // Check for errors
+                $args_log = array(
+                    'request_type' => 'outgoing',
+                    'method' => 'put',
+                    'url' => $url,
+                    'request_headers' => $headers,
+                    'request_data' => $body,
+                    'status' => $response_code,
+                    'response_headers' => $headerResult,
+                    'response_data' => 'null'
+                );
                 if (is_wp_error($response)) {
-                    payu_insert_event_logs('outgoing', 'put', $url, $headers, $body, $response_code, $headerResult, 'null');
+                    payu_insert_event_logs($args_log);
                     echo 'Error: ' . $response->get_error_message();
                 } else {
                     // Process response
                     $response_body = wp_remote_retrieve_body($response);
-                    payu_insert_event_logs('outgoing', 'put', $url, $headers, $body, $response_code, $headerResult, $response_body);
+                    $args_log['response_data'] = $response_body;
+                    payu_insert_event_logs($args_log);
                     error_log('save address payu =' . serialize($response_body));
                     error_log('phone =' . $this->phone_number);
                     return json_decode($response_body);
@@ -446,12 +464,14 @@ class Payu_Payment_Gateway_API
         $this->gateway_module = $plugin_data['gateway_module'];
 
         $url = PAYU_GENERATE_API_URL;
-        if ($this->gateway_module == 'sandbox')
+        if ($this->gateway_module == 'sandbox') {
             $url = PAYU_GENERATE_API_URL_UAT;
+        }
+
 
         $headers = array(
-            'Content-Type' => 'application/x-www-form-urlencoded',
-            'accept' => 'application/json',
+            'Content-Type' => CURL_CONTENT_TYPE,
+            'accept' => CURL_CONTENT_TYPE_JSON,
         );
 
         $body = array(
@@ -470,34 +490,44 @@ class Payu_Payment_Gateway_API
         );
         $response_code = wp_remote_retrieve_response_code($response);
         $headerResult = wp_remote_retrieve_headers($response);
+        $args_log = array(
+            'request_type' => 'outgoing',
+            'method' => 'post',
+            'url' => $url,
+            'request_headers' => $headers,
+            'request_data' => $body,
+            'status' => $response_code,
+            'response_headers' => $headerResult,
+            'response_data' => 'null'
+        );
         if (is_wp_error($response)) {
-            payu_insert_event_logs('outgoing', 'post', $url, $headers, $body, $response_code, $headerResult, 'null');
+            payu_insert_event_logs($args_log);
             error_log('error =' . $response->get_error_message());
             return false;
         } else {
             $response_body = wp_remote_retrieve_body($response);
-            payu_insert_event_logs('outgoing', 'post', $url, $headers, $body, $response_code, $headerResult, $response_body);
+            $args_log['response_data'] = $response_body;
+            payu_insert_event_logs($args_log);
             return json_decode($response_body);
         }
     }
 
-    protected function payu_order_detail_api(){
-       
+    protected function payu_order_detail_api()
+    {
+
         $plugin_data = get_option('woocommerce_payubiz_settings');
         $this->payu_salt = $plugin_data['currency1_payu_salt'];
         $this->gateway_module = $plugin_data['gateway_module'];
         $this->payu_key = $plugin_data['currency1_payu_key'];
-        
+
         $date = gmdate('D, d M Y H:i:s \G\M\T');
-        $requestJson = $this->getRequestBody();
-        $hashString = "|".$date . "|" . $this->payu_salt;
-        //echo "Hash String is " . $hashString . PHP_EOL;
+        $hashString = "|" . $date . "|" . $this->payu_salt;
         $hash = $this->getSha512Hash($hashString);
-        
+
         $url = 'https://apitest.payu.in/cart/order/996_240321:12';
-        
-        //$date = 'Thu, 15 Feb 2024 06:18:04 GMT';
-        $authorization = 'hmac username="'.$this->payu_key.'", algorithm="sha512", headers="date", signature="'.$hash.'"';
+        $authorization = 'hmac username="' .
+            $this->payu_key . '", algorithm="sha512", headers="date", signature="' .
+            $hash . '"';
 
         $request_args = array(
             'method'      => 'GET', // Method must be POST for wp_remote_post
@@ -505,29 +535,23 @@ class Payu_Payment_Gateway_API
                 'Date'          => $date,
                 'Authorization' => $authorization
             ),
-            // Add any additional parameters here, such as body data
-            // 'body'        => $your_body_data
         );
-        $response = wp_remote_post( $url, $request_args );
-        if ( is_wp_error( $response ) ) {
+        $response = wp_remote_post($url, $request_args);
+        if (is_wp_error($response)) {
             return false;
         } else {
             // If you're expecting JSON response, you can decode it
-            $decoded_response = json_decode( wp_remote_retrieve_body( $response ) );
-            if(isset($decoded_response->data->address[0]) && isset($decoded_response->data->address[0]->shippingAddress)){
+            $decoded_response = json_decode(wp_remote_retrieve_body($response));
+            if (
+                isset($decoded_response->data->address[0]) &&
+                isset($decoded_response->data->address[0]->shippingAddress)
+            ) {
                 return $decoded_response->data->address[0]->shippingAddress;
             }
         }
         return false;
-
     }
 
-    private function getRequestBody()
-    {
-        $requestJson = new stdClass();
-        $requestJson->udf1 = "";
-        return $requestJson;
-    }
 
     private function getSha512Hash($hashString)
     {

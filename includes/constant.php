@@ -16,3 +16,7 @@ define('MERCHANT_HOSTED_PAYMENT_JS_LINK_UAT', 'https://jssdk-uat.payu.in/bolt/bo
 define('PAYU_ORDER_DETAIL_API_UAT','https://apitest.payu.in/cart/order/');
 define('PAYU_ORDER_DETAIL_API','https://info.payu.in/cart/order/');
 define('PAYU_USER_TOKEN_EMAIL','commerce.pro@payu.in');
+define('CURL_CONTENT_TYPE','application/x-www-form-urlencoded');
+define('CURL_CONTENT_TYPE_JSON','application/json');
+$woocommerce_version = get_option('woocommerce_version');
+define('WOOCOMMERCE_CURRENT_VERSION',$woocommerce_version);

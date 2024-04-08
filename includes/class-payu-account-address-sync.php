@@ -1,6 +1,6 @@
 <?php
 
-class Payu_Account_Address_sync extends Payu_Payment_Gateway_API
+class PayuAccountAddressSync extends PayuPaymentGatewayAPI
 {
 
     protected $payu_merchant_id;
@@ -27,10 +27,6 @@ class Payu_Account_Address_sync extends Payu_Payment_Gateway_API
         add_filter('woocommerce_shipping_fields', array($this, 'custom_woocommerce_shipping_fields'), 1);
         add_action('wp_login', array($this, 'payu_address_sync_after_login'), 10, 2);
         add_action('woocommerce_receipt_payubiz',array($this,'payu_address_sync_brefore_payment'),1);
-
-
-
-        //add_action('woocommerce_after_edit_account_address_form', array($this, 'payu_save_address_callback1'), 10);
     }
 
     public function schedule_account_address_push($user_id, $address_type)
@@ -59,12 +55,12 @@ class Payu_Account_Address_sync extends Payu_Payment_Gateway_API
             }
         }
     }
-    public function payu_save_address_callback($user_id, $address, $address_type)
+    public function payu_save_address_callback($user_id,$user_login, $address, $address_type)
     {
         error_log('user cron save address =' . serialize($address));
         $result = $this->payu_save_address($address, $address_type, $user_id);
         if ($result && isset($result->status) && $result->status == 1) {
-            $this->payu_insert_saved_address($user_id, $result, $address_type);
+            $this->payu_insert_saved_address($user_id, $user_login, $result, $address_type);
         }
     }
 
@@ -74,46 +70,24 @@ class Payu_Account_Address_sync extends Payu_Payment_Gateway_API
         $this->payu_update_address($address, $address_type, $payu_address_data, $user_id);
     }
 
-    public function payu_insert_saved_address($user_id, $address, $address_type)
+    public function payu_insert_saved_address($user_id, $user_login,  $address, $address_type)
     {
         global $table_prefix, $wpdb;
         $tblname = 'payu_address_sync';
-        $payu_address_id = $address->result->shippingAddress->id ?? NULL;
-        $payu_user_id = $address->result->userId ?? NULL;
+        $payu_address_id = $address->result->shippingAddress->id ?? null;
+        $payu_user_id = $address->result->userId ?? null;
         $wp_payu_table = $table_prefix . "$tblname";
-        $table_data = array('user_id' => $user_id, 'payu_address_id' => $payu_address_id, 'payu_user_id' => $payu_user_id, 'address_type' => $address_type);
+        $table_data = array(
+            'user_id' => $user_id,
+            'payu_address_id' => $payu_address_id,
+            'payu_user_id' => $payu_user_id,
+            'address_type' => $address_type
+        );
         error_log("address table insert query " . serialize($table_data));
         if (!$wpdb->insert($wp_payu_table, $table_data)) {
-            error_log('event log data insert error =', $wpdb->last_error);
+            error_log('event log data insert error = '.$user_login, $wpdb->last_error);
         }
     }
-
-    public function payu_update_user_shipping_address($user_id, $address)
-    {
-        $address = array(
-            'first_name' => 'John',
-            'last_name'  => 'Doe',
-            'company'    => 'ABC Inc',
-            'country'    => 'US',
-            'address_1'  => '123 Main St',
-            'address_2'  => 'Apt 4',
-            'city'       => 'Cityville',
-            'state'      => 'CA',
-            'postcode'   => '12345',
-        );
-
-        // Set the shipping address
-        update_user_meta($user_id, 'shipping_first_name', $address['first_name']);
-        update_user_meta($user_id, 'shipping_last_name', $address['last_name']);
-        update_user_meta($user_id, 'shipping_company', $address['company']);
-        update_user_meta($user_id, 'shipping_country', $address['country']);
-        update_user_meta($user_id, 'shipping_address_1', $address['address_1']);
-        update_user_meta($user_id, 'shipping_address_2', $address['address_2']);
-        update_user_meta($user_id, 'shipping_city', $address['city']);
-        update_user_meta($user_id, 'shipping_state', $address['state']);
-        update_user_meta($user_id, 'shipping_postcode', $address['postcode']);
-    }
-
 
     // Add phone number field to WooCommerce shipping address
     public function custom_woocommerce_shipping_fields($fields)
@@ -146,55 +120,76 @@ class Payu_Account_Address_sync extends Payu_Payment_Gateway_API
         }
     }
 
-    public function payu_address_sync_brefore_payment(){
+    public function payu_address_sync_brefore_payment() {
         $user_id = get_current_user_id();
-		if($user_id){
-            error_log("address sync run before payment");
-			$sync_data = check_payu_address_sync($user_id);
-			if ($sync_data['sync'] == true) {
-				$addresses = get_customer_address_payu($user_id);
-				if ($addresses) {
-					if (isset($addresses['billing']) && in_array('billing',$sync_data['address_type'])) {
-						$result = $this->payu_save_address($addresses['billing'], 'billing', $user_id);
-                        if ($result && isset($result->status) && $result->status == 1) {
-                            $this->payu_insert_saved_address($user_id, $result, 'billing');
-                        }
-					}
-					if (isset($addresses['shipping']) && in_array('shipping',$sync_data['address_type'])) {
-						$result = $this->payu_save_address($addresses['shipping'], 'shipping', $user_id);
-                        if ($result && isset($result->status) && $result->status == 1) {
-                            $this->payu_insert_saved_address($user_id, $result, 'shipping');
-                        }
-					}
-				}
-			}
-
-		}
+        
+        if (!$user_id) {
+            return; // Exit early if no user ID
+        }
+        
+        error_log("address sync run before payment");
+        
+        $sync_data = check_payu_address_sync($user_id);
+        
+        if (!$sync_data['sync']) {
+            return; // Exit early if sync is not required
+        }
+        
+        $addresses = get_customer_address_payu($user_id);
+        
+        if (!$addresses) {
+            return; // Exit early if no addresses found
+        }
+        
+        if (isset($addresses['billing']) && in_array('billing', $sync_data['address_type'])) {
+            $this->process_address_sync($addresses['billing'], 'billing', $user_id);
+        }
+        
+        if (isset($addresses['shipping']) && in_array('shipping', $sync_data['address_type'])) {
+            $this->process_address_sync($addresses['shipping'], 'shipping', $user_id);
+        }
     }
+    
+    private function process_address_sync($address, $type, $user_id) {
+        $result = $this->payu_save_address($address, $type, $user_id);
+        
+        if ($result && isset($result->status) && $result->status == 1) {
+            $this->payu_insert_saved_address($user_id, $result, $type);
+        }
+        
+        return $result;
+    }
+    
 
-    public function payu_address_sync_after_login($user_login, $user)
-    {
+    public function payu_address_sync_after_login($user_login, $user) {
         $user_id = $user->ID;
         $sync_data = check_payu_address_sync($user_id);
-        if ($sync_data['sync'] == true) {
-            $schedule_time = time() + 10;
-            $addresses = get_customer_address_payu($user_id);
-            if ($addresses) {
-                if (isset($addresses['billing']) && in_array('billing',$sync_data['address_type'])) {
-                    $args = array($user_id, $addresses['billing'], 'billing');
-                    if (!wp_next_scheduled('pass_arguments_to_save_address', $args)) {
-                        wp_schedule_single_event($schedule_time, 'pass_arguments_to_save_address', $args);
-                    }
-                }
-                if (isset($addresses['shipping']) && in_array('shipping',$sync_data['address_type'])) {
-                    $args = array($user_id, $addresses['shipping'], 'shipping');
-                    if (!wp_next_scheduled('pass_arguments_to_save_address', $args)) {
-                        wp_schedule_single_event($schedule_time, 'pass_arguments_to_save_address', $args);
-                    }
-                }
+        
+        if (!$sync_data['sync']) {
+            return; // Exit early if sync is not required
+        }
+        
+        $addresses = get_customer_address_payu($user_id);
+        
+        if (!$addresses) {
+            return; // Exit early if no addresses found
+        }
+        
+        $schedule_time = time() + 10;
+        
+        $this->schedule_address_sync($user_id, $user_login, $addresses, $sync_data, 'billing', $schedule_time);
+        $this->schedule_address_sync($user_id, $user_login, $addresses, $sync_data, 'shipping', $schedule_time);
+    }
+    
+    private function schedule_address_sync($user_id, $user_login, $addresses, $sync_data, $type, $schedule_time) {
+        if (isset($addresses[$type]) && in_array($type, $sync_data['address_type'])) {
+            $args = array($user_id,$user_login, $addresses[$type], $type);
+            if (!wp_next_scheduled('pass_arguments_to_save_address', $args)) {
+                wp_schedule_single_event($schedule_time, 'pass_arguments_to_save_address', $args);
             }
         }
     }
+    
 
     // Save the phone number to the user meta
     function custom_save_shipping_phone($user_id)
@@ -205,4 +200,4 @@ class Payu_Account_Address_sync extends Payu_Payment_Gateway_API
     }
 }
 
-new Payu_Account_Address_sync();
+$payu_account_address_sync = new PayuAccountAddressSync();

@@ -5,7 +5,7 @@
 
  */
 
-class Payu_Cart_Express_checkout
+class PayuCartExpressCheckout
 {
 
     protected $checkout_express;
@@ -20,7 +20,9 @@ class Payu_Cart_Express_checkout
         $this->checkout_express = $plugin_data['checkout_express'];
         $this->payu_enable = $plugin_data['enabled'];
         $this->disable_checkout = $plugin_data['disable_checkout'];
+        add_filter('woocommerce_get_order_item_totals', array(&$this, 'add_custom_order_total_row'), 10, 2);
         if ($this->checkout_express == 'checkout_express' && $this->payu_enable == 'yes') {
+            add_filter('woocommerce_coupons_enabled', array($this, 'disable_coupon_field_on_checkout'));
             add_action('woocommerce_proceed_to_checkout', array(&$this, 'add_payu_buy_now_button'));
             add_action('woocommerce_widget_shopping_cart_buttons', array($this, 'add_payu_buy_now_button'), 20);
             add_action('template_redirect',array($this,'cart_page_checkout_callback'));
@@ -41,9 +43,7 @@ class Payu_Cart_Express_checkout
 
     public function add_payu_buy_now_button()
     {
-        //wp_enqueue_script('custom-cart-script', get_template_directory_uri() . '/path/to/your/script.js', array('jquery'), '1.0', true);
-
-
+        
         wp_localize_script('custom-cart-script', 'wc_checkout_params', array(
             'ajax_url' => WC()->ajax_url(),
             'checkout_nonce' => wp_create_nonce('woocommerce-process_checkout')
@@ -154,9 +154,9 @@ class Payu_Cart_Express_checkout
         $postcode = $billing_postcode;
         $billing_data = array(
             'first_name' => $first_name ? $first_name : 'test',
-            'last_name' => $last_name ? $last_name : '',
+            'last_name' => $last_name,
             'address_1' => $address_1 ? $address_1 : 'address',
-            'company' => $company ? $company : '',
+            'company' => $company,
             'email' => $email ? $email : '',
             'phone' => $billing_phone ? $billing_phone : '9999999999',
             'city' => $city ? $city : '',
@@ -300,6 +300,35 @@ class Payu_Cart_Express_checkout
             }
         }
     }
+
+
+	public function disable_coupon_field_on_checkout($enabled)
+	{
+        error_log($enabled);
+		return false;
+	}
+
+
+	public function add_custom_order_total_row($total_rows, $order)
+	{
+		if ($total_rows['payment_method']['value'] == 'PayUBiz') {
+			$payment_mode['payment_mode'] = array(
+				'label' => __('Payment Mode', 'your-text-domain'),
+				'value' => $order->get_meta('payu_mode'),
+			);
+
+			$payu_offer_type = $order->get_meta('payu_offer_type');
+			if ($payu_offer_type) {
+				$payment_mode['payment_offer_type'] = array(
+					'label' => __('Offer Type', 'your-text-domain'),
+					'value' => $payu_offer_type,
+				);
+			}
+
+			payment_array_insert($total_rows, 'payment_method', $payment_mode);
+		}
+		return $total_rows;
+	}
 }
 
-new Payu_Cart_Express_checkout();
+$payu_cart_express_checkout = new PayuCartExpressCheckout();

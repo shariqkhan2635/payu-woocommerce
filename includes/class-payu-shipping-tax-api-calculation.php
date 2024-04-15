@@ -259,16 +259,24 @@ class PayuShippingTaxApiCalc
 
     private function payu_generate_authentication_token($user_id)
     {
-        // Generate a random password (token)
-        $token = wp_generate_password(100, false);
+
+        $expiration = get_user_meta($user_id, 'payu_auth_token_expiration', true);
+        $stored_token = get_user_meta($user_id, 'payu_auth_token', true);
+
+        if($expiration >= time() && $stored_token){
+            return $stored_token;
+        }
+
+        $token = wp_generate_password(12, false); // Generate a secure password
+        $hashed_token = wp_hash_password($token); // Hash the password securely
 
         // Set the expiration time to 24 hours from now
         $expiration = time() + 24 * 60 * 60;
         // Save the token and expiration time in user meta
-        update_user_meta($user_id, 'payu_auth_token', $token);
+        update_user_meta($user_id, 'payu_auth_token', $hashed_token);
         update_user_meta($user_id, 'payu_auth_token_expiration', $expiration);
 
-        return $token;
+        return $hashed_token;
     }
 
     private function payu_validate_authentication_token($email, $token)

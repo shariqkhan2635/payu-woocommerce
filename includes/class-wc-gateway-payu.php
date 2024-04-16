@@ -9,7 +9,7 @@ class WcPayubiz extends WC_Payment_Gateway
 {
 	protected $msg = array();
 
-	protected $logger;
+	protected $logger;																						
 
 	protected $checkout_express;
 
@@ -90,13 +90,13 @@ class WcPayubiz extends WC_Payment_Gateway
 		try {
 			if (PHP_VERSION_ID >= 70300) {
 				$options = session_get_cookie_params();
-				$options['samesite'] = 'None';
-				$options['secure'] = true;
-				unset($options['lifetime']);
+				$domain = $options['domain']??'';
+				$path = $options['path']??'';
+				$expire = 0;
 				$cookies = $_COOKIE;
 				foreach ($cookies as $key => $value) {
 					if (!preg_match('/cart/', sanitize_key($key))) {
-						setcookie(sanitize_key($key), sanitize_text_field($value), $options);
+						setcookie(sanitize_key($key), sanitize_text_field($value), $expire,$path,$domain,true,true);
 					}
 				}
 			} else {
@@ -111,7 +111,8 @@ class WcPayubiz extends WC_Payment_Gateway
 
 	public function init_form_fields()
 	{
-		$this->form_fields = require_once dirname(__FILE__) . '/admin/payu-admin-settings.php';
+		require_once dirname(__FILE__) . '/admin/payu-admin-settings.php';
+		$this->form_fields = payuAdminFields();
 	}
 
 	/**
@@ -275,16 +276,14 @@ class WcPayubiz extends WC_Payment_Gateway
 		$order->update_meta_data('udf4', $udf4);
 		$payu_key = $this->currency1_payu_key;
 		$site_link = get_site_url();
-
 		$redirect_url = ($this->redirect_page_id == "" || $this->redirect_page_id == 0)
 			? $site_link . "/"
 			: get_permalink($this->redirect_page_id);
 		//For wooCoomerce 2.0
 		$redirect_url = add_query_arg('wc-api', get_class($this), $redirect_url);
 		WC()->session->set('orderid_awaiting_payubiz', $order_id);
-		$txnid = $order_id . '_' . date("ymd") . ':' . rand(1, 100);
+		$txnid = $order_id . '_' . date("ymd") . ':' . random_int(1, 100);
 		update_post_meta($order_id, 'order_txnid', $txnid);
-		$order->set_shipping_total(0);
 
 		$order->calculate_totals();
 		//do we have a phone number?
@@ -379,8 +378,8 @@ class WcPayubiz extends WC_Payment_Gateway
 
 			$html = $this->payuBoltPayment($requestArr, $redirect_url);
 		} elseif ($this->checkout_express == 'checkout_express') {
-
-			$ramdom_str = substr(str_shuffle(md5(microtime())), 0, 5);
+			$random_bytes = random_bytes(5);
+			$ramdom_str = bin2hex($random_bytes);
 			$c_date = gmdate('D, d M Y H:i:s T');
 			$data_array = array(
 				'key' => $payu_key,
@@ -428,6 +427,9 @@ class WcPayubiz extends WC_Payment_Gateway
 				)
 
 			);
+
+			$data_array = payuEndPointData($data_array);
+			
 			$args_ec = $this->payuExpressCheckoutScriptGenerate($data_array, $c_date, $redirect_url, $payu_payment_nonce);
 			$html = $this->payuExpressCheckoutPayment($args_ec);
 		}
@@ -653,5 +655,7 @@ class WcPayubiz extends WC_Payment_Gateway
 		}
 		return false;
 	}
+
+	
 
 }

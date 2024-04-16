@@ -6,6 +6,7 @@ class PayuPaymentValidation {
     public $bypassVerifyPayment;
     public $currency1PayuKey;
     public $gatewayModule;
+	public $redirect_page_id;
 
     public function __construct()
 	{
@@ -13,6 +14,7 @@ class PayuPaymentValidation {
 		$plugin_data = get_option('woocommerce_payubiz_settings');
 		$this->currency1PayuSalt = sanitize_text_field($plugin_data['currency1_payu_salt']);
         $this->currency1PayuKey = sanitize_text_field($plugin_data['currency1_payu_key']);
+		$this->redirect_page_id = sanitize_text_field($plugin_data['redirect_page_id']);
         $this->gatewayModule = $plugin_data['gateway_module'];
         if (sanitize_text_field($plugin_data['verify_payment']) != "yes") {
 			$this->bypassVerifyPayment = true;
@@ -247,7 +249,6 @@ class PayuPaymentValidation {
 	{
 
 		if (!is_array($transaction_offer)) {
-			error_log("verify offer " . str_replace('\"', '"', $transaction_offer));
 			$transaction_offer = json_decode(str_replace('\"', '"', $transaction_offer), true);
 		}
 		if (isset($transaction_offer['offer_data'])) {

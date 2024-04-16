@@ -270,3 +270,45 @@ function payu_transaction_data_insert($postdata, $order_id)
 			return true;
 		}
 	}
+
+
+	function check_shipping_methods_setup() {
+		// Get all shipping zones
+		$shipping_zones = WC_Shipping_Zones::get_zones();
+	
+		// Flag to indicate if any shipping method is found
+		$shipping_method_found = false;
+	
+		// Loop through each shipping zone
+		foreach ( $shipping_zones as $zone ) {
+			// Get shipping methods for the zone
+			$shipping_methods = $zone['shipping_methods'];
+	
+			// Check if there are any shipping methods
+			if ( ! empty( $shipping_methods ) ) {
+				$shipping_method_found = true;
+				break; // Exit loop as soon as we find a shipping method
+			}
+		}
+	
+		// Check if any shipping method is set up
+		return $shipping_method_found? true:false;
+	}
+
+	function payuEndPointData($data_array){
+		$site_link = get_site_url();
+		$payu_payment_success_webhook_url = $site_link . '/wp-json/payu/v1/get-payment-success-update';
+		$payu_payment_failed_webhook_url = $site_link . '/wp-json/payu/v1/get-payment-failed-update';
+
+		$data_array['partner_webhook_success'] = $payu_payment_success_webhook_url;
+		$data_array['partner_webhook_failure'] = $payu_payment_failed_webhook_url;
+
+		if ( check_shipping_methods_setup() ) {
+			$data_array['fetch_dynamic_charges'] = true;
+			$data_array['dynamic_charges_endpoint'] = $site_link;
+		} else {
+			$data_array['fetch_dynamic_charges'] = false;
+		}
+
+		return $data_array;
+	}

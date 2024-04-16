@@ -25,7 +25,7 @@ class PayuAccountAddressSync extends PayuPaymentGatewayAPI
         add_action('woocommerce_created_customer', array($this, 'custom_save_shipping_phone'));
         add_action('woocommerce_save_account_details', array($this, 'custom_save_shipping_phone'));
         add_filter('woocommerce_shipping_fields', array($this, 'custom_woocommerce_shipping_fields'), 1);
-        add_action('wp_login', array($this, 'payu_address_sync_after_login'), 10, 2);
+        add_action('wp_login', array($this, 'payu_address_sync_after_login'), 10, 1);
         add_action('woocommerce_receipt_payubiz',array($this,'payu_address_sync_brefore_payment'),1);
     }
 
@@ -39,7 +39,8 @@ class PayuAccountAddressSync extends PayuPaymentGatewayAPI
 
         $payu_address_table = 'payu_address_sync';
         $wp_payu_address_table = $table_prefix . "$payu_address_table";
-        $payu_address_data = $wpdb->get_row("select payu_address_id,payu_user_id from $wp_payu_address_table where user_id = $user_id and address_type = '$address_type'");
+        $payu_address_data = $wpdb->get_row("select payu_address_id,payu_user_id from $wp_payu_address_table
+         where user_id = $user_id and address_type = '$address_type'");
 
         if ($payu_address_data) {
             error_log("addrees run update");
@@ -55,12 +56,12 @@ class PayuAccountAddressSync extends PayuPaymentGatewayAPI
             }
         }
     }
-    public function payu_save_address_callback($user_id,$user_login, $address, $address_type)
+    public function payu_save_address_callback($user_id, $address, $address_type)
     {
         error_log('user cron save address =' . serialize($address));
         $result = $this->payu_save_address($address, $address_type, $user_id);
         if ($result && isset($result->status) && $result->status == 1) {
-            $this->payu_insert_saved_address($user_id, $user_login, $result, $address_type);
+            $this->payu_insert_saved_address($user_id, $result, $address_type);
         }
     }
 
@@ -70,7 +71,7 @@ class PayuAccountAddressSync extends PayuPaymentGatewayAPI
         $this->payu_update_address($address, $address_type, $payu_address_data, $user_id);
     }
 
-    public function payu_insert_saved_address($user_id, $user_login,  $address, $address_type)
+    public function payu_insert_saved_address($user_id,  $address, $address_type)
     {
         global $table_prefix, $wpdb;
         $tblname = 'payu_address_sync';
@@ -85,7 +86,7 @@ class PayuAccountAddressSync extends PayuPaymentGatewayAPI
         );
         error_log("address table insert query " . serialize($table_data));
         if (!$wpdb->insert($wp_payu_table, $table_data)) {
-            error_log('event log data insert error = '.$user_login, $wpdb->last_error);
+            error_log('event log data insert error = '. $wpdb->last_error);
         }
     }
 
@@ -110,12 +111,15 @@ class PayuAccountAddressSync extends PayuPaymentGatewayAPI
         $tblname = 'payu_address_sync';
         $wp_payu_address_table = $table_prefix . "$tblname";
 
-        $address_sync_data = $wpdb->get_results("select address_type from $wp_payu_address_table where user_id = $user_id and address_type IS NOT NULL");
+        $address_sync_data = $wpdb->get_results("select address_type from $wp_payu_address_table
+         where user_id = $user_id and address_type IS NOT NULL");
         if($address_sync_data && count($address_sync_data) == 1){
-            return array('sync' => true,'address_type' => $address_sync_data[0]->address_type=='billing'?array('shipping'):array('billing'));
-        } else if ($address_sync_data && count($address_sync_data) > 1) {
+            return array(
+                'sync' => true,
+                'address_type' => $address_sync_data[0]->address_type=='billing'?array('shipping'):array('billing'));
+        } elseif ($address_sync_data && count($address_sync_data) > 1) {
             return array('sync' => false,'address_type' => false);
-        } else if (!$address_sync_data) {
+        } elseif (!$address_sync_data) {
             return array('sync' => true,'address_type' => array('billing','shipping')); 
         }
     }
@@ -161,29 +165,34 @@ class PayuAccountAddressSync extends PayuPaymentGatewayAPI
     }
     
 
-    public function payu_address_sync_after_login($user_login, $user) {
-        $user_id = $user->ID;
-        $sync_data = check_payu_address_sync($user_id);
-        
-        if (!$sync_data['sync']) {
-            return; // Exit early if sync is not required
+    public function payu_address_sync_after_login($user_login) {
+        $user = get_user_by('login', $user_login);
+        if($user){
+            $user_id = $user->ID;
+            $sync_data = check_payu_address_sync($user_id);
+            
+            
+            if (!$sync_data['sync']) {
+                return; // Exit early if sync is not required
+            }
+            
+            $addresses = get_customer_address_payu($user_id);
+            
+            if (!$addresses) {
+                return; // Exit early if no addresses found
+            }
+            
+            $schedule_time = time() + 10;
+            
+            $this->schedule_address_sync($user_id, $addresses, $sync_data, 'billing', $schedule_time);
+            $this->schedule_address_sync($user_id, $addresses, $sync_data, 'shipping', $schedule_time);
         }
         
-        $addresses = get_customer_address_payu($user_id);
-        
-        if (!$addresses) {
-            return; // Exit early if no addresses found
-        }
-        
-        $schedule_time = time() + 10;
-        
-        $this->schedule_address_sync($user_id, $user_login, $addresses, $sync_data, 'billing', $schedule_time);
-        $this->schedule_address_sync($user_id, $user_login, $addresses, $sync_data, 'shipping', $schedule_time);
     }
     
-    private function schedule_address_sync($user_id, $user_login, $addresses, $sync_data, $type, $schedule_time) {
+    private function schedule_address_sync($user_id, $addresses, $sync_data, $type, $schedule_time) {
         if (isset($addresses[$type]) && in_array($type, $sync_data['address_type'])) {
-            $args = array($user_id,$user_login, $addresses[$type], $type);
+            $args = array($user_id, $addresses[$type], $type);
             if (!wp_next_scheduled('pass_arguments_to_save_address', $args)) {
                 wp_schedule_single_event($schedule_time, 'pass_arguments_to_save_address', $args);
             }

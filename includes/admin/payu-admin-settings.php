@@ -19,7 +19,7 @@ if(!function_exists('payuAdminFields')){
                         'title' => __('Select Checkout Experience', 'payubiz'),
                         'type' => 'select',
                         'options' => array(
-                              'redirect' => 'Payu Redirect',
+                              'redirect' => 'PayU Redirect',
                               'bolt' => 'Bolt',
                               'checkout_express' => 'Checkout Exppress'
                         ),

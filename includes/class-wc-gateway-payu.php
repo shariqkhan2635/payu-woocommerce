@@ -213,7 +213,7 @@ class WcPayubiz extends WC_Payment_Gateway
 		if (!$this->isWcApi()) {
 			return;
 		}
-
+		
 		$postdata = $this->preparePostdata();
 		$payuPaymentValidation = new PayuPaymentValidation();
 		$payuPaymentValidation->payuPaymentValidationAndRedirect($postdata);
@@ -251,15 +251,14 @@ class WcPayubiz extends WC_Payment_Gateway
 			);
 			payu_insert_event_logs($args_log);
 		}
-
+		
 		foreach ($_POST as $key => $val) {
 			$postdata[$key] = in_array(
 				$key,
-				['transaction_offer', 'cart_details', 'shipping_address']
+				['transaction_offer', 'cart_details', 'shipping_address','extra_charges']
 			) ?
 				$val : sanitize_text_field($val);
 		}
-
 		return $postdata;
 	}
 
@@ -284,6 +283,7 @@ class WcPayubiz extends WC_Payment_Gateway
 		WC()->session->set('orderid_awaiting_payubiz', $order_id);
 		$txnid = $order_id . '_' . date("ymd") . ':' . random_int(1, 100);
 		update_post_meta($order_id, 'order_txnid', $txnid);
+		
 
 		$order->calculate_totals();
 		//do we have a phone number?
@@ -305,8 +305,8 @@ class WcPayubiz extends WC_Payment_Gateway
 			$action = esc_url(PAYU_HOSTED_PAYMENT_URL_UAT);
 		}
 
-
-		$amount = sanitize_text_field($order->order_total);
+		$order_subtotal = sanitize_text_field($order->get_subtotal());
+		$amount = $this->checkout_express=='checkout_express'?$order_subtotal:sanitize_text_field($order->order_total);
 		$firstname = sanitize_text_field($order->billing_first_name);
 		$lastname = sanitize_text_field($order->billing_last_name);
 		$zipcode = sanitize_text_field($order->billing_postcode);
@@ -330,21 +330,17 @@ class WcPayubiz extends WC_Payment_Gateway
 		if ($guest_checkout_enabled == 'yes') {
 			$email_required = false;
 		}
-		$billing_email = $order->billing_email ? sanitize_email($order->billing_email) : 'yash@gmail.com';
+		$billing_email = $order->billing_email ? sanitize_email($order->billing_email) : '';
 		$email = $user_email ? $user_email : $billing_email;
 		$phone = $payu_phone ? $payu_phone : sanitize_text_field($order->billing_phone);
-		$state = sanitize_text_field($order->billing_state);
+		$get_state_list = get_state_list();
+		$state = $get_state_list[sanitize_text_field($order->billing_state)];
 		$city = sanitize_text_field($order->billing_city);
 		$country = sanitize_text_field($order->billing_country);
 		$pG = '';
 		$udf5 = 'WooCommerce';
 		$hash = $this->generateHashToken($txnid, $amount, $productInfo, $firstname, $email, $udf4, $udf5);
-		$shipping_total = $order->get_shipping_total();
-		$shipping_tax   = $order->get_shipping_tax();
-		$order_subtotal = $order->get_subtotal();
-		$cod_fee = apply_filters('payu_express_checkout_cod_fee', 0);
-		$other_changes = apply_filters('payu_express_checkout_other_charges', 0);
-		$tax_vat = apply_filters('payu_express_checkout_tax_vat', 0);
+		
 		$payu_payment_nonce = wp_nonce_field('payu_payment_nonce', 'payu_payment_nonce', true, false);
 		$requestArr = [
 			'key' => $payu_key,
@@ -399,7 +395,7 @@ class WcPayubiz extends WC_Payment_Gateway
 				'enforce_paymethod' => '',
 				'isCheckoutExpress' => true,
 				'icp_source' => 'express',
-				'platform' => 'WooCommerce',
+				'platform' => 'woocommerce',
 				'productinfo' => $productInfo,
 				'email_required' => $email_required,
 				'edit_email_allowed' => $edit_email_allowed,
@@ -408,17 +404,11 @@ class WcPayubiz extends WC_Payment_Gateway
 				'furl' => $site_link,
 				'orderid' => $ramdom_str,
 				'extra_charges' => array(
-					'totalAmount' => $amount, // this amount adding extra charges + cart Amount
-					'shipping_charges' => $shipping_total, // static shipping charges
-					'cod_fee' => $cod_fee, // cash on delivery fee.
-					'other_charges' => $other_changes,
-					'tax_info' => array(
-						'breakup' => array(
-							'GST' => $shipping_tax,
-							'VAT' => $tax_vat
-						),
-						'total' => ($shipping_tax + $tax_vat),
-					),
+					'totalAmount' => NULL, // this amount adding extra charges + cart Amount
+					'shipping_charges' => NULL, // static shipping charges
+					'cod_fee' => 0, // cash on delivery fee.
+					'other_charges' => NULL,
+					'tax_info' => NULL,
 				),
 				'cart_details' => array(
 					'amount' => $order_subtotal,

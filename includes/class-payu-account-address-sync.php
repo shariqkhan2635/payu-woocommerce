@@ -27,33 +27,22 @@ class PayuAccountAddressSync extends PayuPaymentGatewayAPI
         add_filter('woocommerce_shipping_fields', array($this, 'custom_woocommerce_shipping_fields'), 1);
         add_action('wp_login', array($this, 'payu_address_sync_after_login'), 10, 1);
         add_action('woocommerce_receipt_payubiz',array($this,'payu_address_sync_brefore_payment'),1);
+        add_filter( 'woocommerce_default_address_fields', array($this,'make_billing_postcode_required') );
     }
 
     public function schedule_account_address_push($user_id, $address_type)
     {
         global $wpdb, $table_prefix;
         date_default_timezone_set('Asia/Kolkata');
-
-
-        $schedule_time = time() + 10;
-
         $payu_address_table = 'payu_address_sync';
         $wp_payu_address_table = $table_prefix . "$payu_address_table";
         $payu_address_data = $wpdb->get_row("select payu_address_id,payu_user_id from $wp_payu_address_table
          where user_id = $user_id and address_type = '$address_type'");
 
         if ($payu_address_data) {
-            error_log("addrees run update");
-            $args = array($user_id, $_POST, $address_type, $payu_address_data);
-            if (!wp_next_scheduled('pass_arguments_to_update_address', $args)) {
-                wp_schedule_single_event($schedule_time, 'pass_arguments_to_update_address', $args);
-            }
+            $this->payu_update_address_callback($user_id, $_POST, $address_type, $payu_address_data);
         } else {
-            error_log("addrees run insert");
-            $args = array($user_id, $_POST, $address_type);
-            if (!wp_next_scheduled('pass_arguments_to_save_address', $args)) {
-                wp_schedule_single_event($schedule_time, 'pass_arguments_to_save_address', $args);
-            }
+            $this->payu_save_address_callback($user_id, $_POST, $address_type);
         }
     }
     public function payu_save_address_callback($user_id, $address, $address_type)
@@ -93,6 +82,14 @@ class PayuAccountAddressSync extends PayuPaymentGatewayAPI
     // Add phone number field to WooCommerce shipping address
     public function custom_woocommerce_shipping_fields($fields)
     {
+
+        $fields['shipping_email'] = array(
+            'label'     => __('Email', 'woocommerce'),
+            'required'  => false,
+            'class'     => array('form-row-wide'),
+            'clear'     => true,
+        );
+
         $fields['shipping_phone'] = array(
             'label'     => __('Phone Number', 'woocommerce'),
             'required'  => true,
@@ -201,11 +198,20 @@ class PayuAccountAddressSync extends PayuPaymentGatewayAPI
     
 
     // Save the phone number to the user meta
-    function custom_save_shipping_phone($user_id)
+    public function custom_save_shipping_phone($user_id)
     {
         if (isset($_POST['shipping_phone'])) {
             update_user_meta($user_id, 'shipping_phone', sanitize_text_field($_POST['shipping_phone']));
         }
+        if (isset($_POST['shipping_email'])) {
+            update_user_meta($user_id, 'shipping_email', sanitize_text_field($_POST['shipping_email']));
+        }
+    }
+
+    public function make_billing_postcode_required( $fields ) {
+        $fields['phone']['required'] = true;
+    
+        return $fields;
     }
 }
 

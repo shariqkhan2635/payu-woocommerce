@@ -21,16 +21,19 @@ class PayuCartExpressCheckout
         $this->payu_enable = $plugin_data['enabled'];
         $this->disable_checkout = $plugin_data['disable_checkout'];
         add_filter('woocommerce_get_order_item_totals', array(&$this, 'add_custom_order_total_row'), 10, 2);
+        add_filter('woocommerce_order_get_formatted_shipping_address', array($this, 'woocommerce_order_get_formatted_shipping_email_added'), 10, 3);
+
         if ($this->checkout_express == 'checkout_express' && $this->payu_enable == 'yes') {
+            add_action('woocommerce_pay_order_before_submit', array($this, 'payu_woocommerce_pay_order_before_submit'));
             add_filter('woocommerce_coupons_enabled', array($this, 'disable_coupon_field_on_checkout'));
+            add_filter('woocommerce_product_needs_shipping', array($this, 'woocommerce_product_needs_shipping_enable'));
             add_action('woocommerce_proceed_to_checkout', array(&$this, 'add_payu_buy_now_button'));
             add_action('woocommerce_widget_shopping_cart_buttons', array($this, 'add_payu_buy_now_button'), 20);
-            add_action('template_redirect',array($this,'cart_page_checkout_callback'));
+            add_action('template_redirect', array($this, 'cart_page_checkout_callback'));
             add_action('wp_enqueue_scripts', array($this, 'checkout_nonce_enqueue_custom_scripts'));
-            add_action('wp_footer', array($this, 'wc_cart_reload_cart_page_on_calc_shipping'));
             add_filter('woocommerce_billing_fields', array($this, 'payu_remove_required_fields_checkout'));
-            add_filter('woocommerce_billing_fields', array($this, 'payu_wc_unrequire_wc_phone_field'));
             add_filter('woocommerce_default_address_fields', array($this, 'filter_default_address_fields'), 20, 1);
+            add_action('woocommerce_before_cart', array($this, 'update_cart_address_on_load'));
             if ($this->disable_checkout == 'yes') {
                 add_action('init', array($this, 'payu_remove_checkout_button'));
                 add_action('template_redirect', array($this, 'payu_redirect_checkout_to_cart'));
@@ -43,7 +46,7 @@ class PayuCartExpressCheckout
 
     public function add_payu_buy_now_button()
     {
-        
+
         wp_localize_script('custom-cart-script', 'wc_checkout_params', array(
             'ajax_url' => WC()->ajax_url(),
             'checkout_nonce' => wp_create_nonce('woocommerce-process_checkout')
@@ -54,7 +57,7 @@ class PayuCartExpressCheckout
         $billing_data = $addresses['billing'];
 
 ?>
-        <a href="javascript:void(0);" class="checkout-button payu-checkout button alt wc-forward">Buy Now with Payu</a>
+        <a href="javascript:void(0);" class="checkout-button payu-checkout button alt wc-forward">Buy Now with PayU</a>
         <script>
             var site_url = '<?php echo get_site_url(); ?>';
             jQuery(document).ready(function($) {
@@ -85,6 +88,8 @@ class PayuCartExpressCheckout
                             shipping_city: '<?php echo $shipping_data['city']; ?>',
                             shipping_state: '<?php echo $shipping_data['state']; ?>',
                             shipping_postcode: '<?php echo $shipping_data['postcode']; ?>',
+                            shipping_email: '<?php echo $shipping_data['email']; ?>',
+                            ship_to_order_comments: '',
                             ship_to_different_address: 1,
                         <?php } ?>
                         order_comments: '',
@@ -136,7 +141,7 @@ class PayuCartExpressCheckout
         $shipping_last_name = $wc_customer->get_shipping_last_name();
         $shipping_address = $wc_customer->get_shipping_address();
         $shipping_company = $wc_customer->get_shipping_company();
-        $shipping_email = $wc_customer->get_billing_email();
+        $shipping_email = get_user_meta($customer_id, 'shipping_email', true);
         $shipping_phone = $wc_customer->get_shipping_phone();
         $shipping_city = $wc_customer->get_shipping_city();
         $shipping_country = $wc_customer->get_shipping_country();
@@ -158,7 +163,7 @@ class PayuCartExpressCheckout
             'address_1' => $address_1 ? $address_1 : 'address',
             'company' => $company,
             'email' => $email ? $email : '',
-            'phone' => $billing_phone ? $billing_phone : '9999999999',
+            'phone' => $billing_phone ? $billing_phone : '9810263726',
             'city' => $city ? $city : '',
             'country' => $country ? $country : 'IN',
             'state' => $state ? $state : '',
@@ -225,54 +230,26 @@ class PayuCartExpressCheckout
         }
     }
 
-    public function payu_wc_unrequire_wc_phone_field($fields)
-    {
-        $fields['billing_phone']['required'] = false;
-        $fields['billing_postcode']['required'] = false;
-        $fields['billing_city']['required'] = false;
-        $fields['billing_last_name']['required'] = false;
-        $fields['billing_first_name']['required'] = false;
-        $fields['billing_email']['required'] = false;
-        $fields['billing_address_1']['required'] = false;
-        $fields['billing_email']['required'] = false;
-        return $fields;
-    }
 
     public function filter_default_address_fields($address_fields)
     {
         // Only on checkout page
 
         // All field keys in this array
-        $key_fields = array('country', 'first_name', 'last_name', 'company', 'address_1', 'address_2', 'city', 'state', 'postcode');
+        if (is_cart()) {
+            $key_fields = array('country', 'first_name', 'last_name', 'company', 'address_1', 'address_2', 'city', 'state', 'postcode');
 
-        // Loop through each address fields (billing and shipping)
-        foreach ($key_fields as $key_field) {
-            $address_fields[$key_field]['required'] = false;
+            // Loop through each address fields (billing and shipping)
+            foreach ($key_fields as $key_field) {
+                $address_fields[$key_field]['required'] = false;
+            }
         }
-
         return $address_fields;
     }
 
     public function remove_proceed_to_checkout_action()
     {
         remove_action('woocommerce_widget_shopping_cart_buttons', 'woocommerce_widget_shopping_cart_proceed_to_checkout', 20);
-    }
-
-    public function wc_cart_reload_cart_page_on_calc_shipping()
-    {
-        if (is_cart()) :
-            ?>
-            <script type="text/javascript">
-                jQuery(function($) {
-                    jQuery(document).on('submit', '.woocommerce-shipping-calculator', function() {
-                        jQuery(document).ajaxStop(function() {
-                            window.location = '<?php echo wc_get_cart_url(); ?>';
-                        });
-                    });
-                });
-            </script>
-<?php
-        endif;
     }
 
     public function payu_remove_required_fields_checkout($fields)
@@ -291,8 +268,9 @@ class PayuCartExpressCheckout
         return $fields;
     }
 
-    public function cart_page_checkout_callback(){
-        if ( is_page( 'cart' ) || is_cart() ) {
+    public function cart_page_checkout_callback()
+    {
+        if (is_page('cart') || is_cart()) {
             // Pass parameters to the script
             $guest_checkout_enabled = get_option('woocommerce_enable_guest_checkout');
             if ($guest_checkout_enabled == 'no') {
@@ -302,33 +280,93 @@ class PayuCartExpressCheckout
     }
 
 
-	public function disable_coupon_field_on_checkout($enabled)
-	{
+    public function disable_coupon_field_on_checkout($enabled)
+    {
         error_log($enabled);
-		return false;
-	}
+        return false;
+    }
 
 
-	public function add_custom_order_total_row($total_rows, $order)
-	{
-		if ($total_rows['payment_method']['value'] == 'PayUBiz') {
-			$payment_mode['payment_mode'] = array(
-				'label' => __('Payment Mode', 'your-text-domain'),
-				'value' => $order->get_meta('payu_mode'),
-			);
+    public function add_custom_order_total_row($total_rows, $order)
+    {
+        if ($total_rows['payment_method']['value'] == 'PayUBiz') {
+            $payment_mode['payment_mode'] = array(
+                'label' => __('Payment Mode', 'your-text-domain'),
+                'value' => $order->get_meta('payu_mode'),
+            );
 
-			$payu_offer_type = $order->get_meta('payu_offer_type');
-			if ($payu_offer_type) {
-				$payment_mode['payment_offer_type'] = array(
-					'label' => __('Offer Type', 'your-text-domain'),
-					'value' => $payu_offer_type,
-				);
-			}
+            $payu_offer_type = $order->get_meta('payu_offer_type');
+            if ($payu_offer_type) {
+                $payment_mode['payment_offer_type'] = array(
+                    'label' => __('Offer Type', 'your-text-domain'),
+                    'value' => $payu_offer_type,
+                );
+            }
 
-			payment_array_insert($total_rows, 'payment_method', $payment_mode);
-		}
-		return $total_rows;
-	}
+            payment_array_insert($total_rows, 'payment_method', $payment_mode);
+        }
+        return $total_rows;
+    }
+
+
+    public function update_cart_address_on_load()
+    {
+        // Get current user's billing address
+        $current_user = wp_get_current_user();
+        // Update cart address
+        // Update cart billing address fields
+        if (WC()->customer->get_id() > 0 && $current_user) {
+            WC()->customer->set_shipping_country($current_user->billing_country);
+            WC()->customer->set_billing_state($current_user->billing_state);
+            WC()->customer->set_shipping_state($current_user->shipping_state);
+            WC()->customer->set_shipping_city($current_user->shipping_city);
+            WC()->customer->set_shipping_postcode($current_user->shipping_postcode);
+            WC()->customer->set_shipping_address_1($current_user->shipping_address_1);
+            // Set other billing address fields as needed
+        }
+    }
+
+    public function woocommerce_order_get_formatted_shipping_email_added($address, $raw_address, $order)
+    {
+        $shipping_email = $order->get_meta('shipping_email');
+        if ($shipping_email) {
+            $address .= "<br><p class='woocommerce-customer-details--email'>$shipping_email</p>";
+        }
+
+        return $address;
+    }
+
+    public function payu_woocommerce_pay_order_before_submit()
+    {
+        if (isset($_GET['pay_for_order'])) {
+            // Extract the order ID from the URL
+            $current_url = $_SERVER['REQUEST_URI'];
+            $url_parts = parse_url($current_url);
+            // Extract the path
+            $path = isset($url_parts['path']) ? $url_parts['path'] : '';
+            // Extract the order ID from the path
+            $order_id = basename(rtrim($path, '/'));
+            $order = wc_get_order($order_id);
+            // Get items from the pending order
+            $order_items = $order->get_items();
+            if ($order_items) {
+                WC()->cart->empty_cart();
+
+                foreach ($order_items as $item) {
+                    $product_id = $item->get_product_id();
+                    $quantity = $item->get_quantity();
+                    // Add or update cart item based on pending order
+                    WC()->cart->add_to_cart($product_id, $quantity, $item->get_variation_id());
+                }
+            }
+        }
+    }
+
+    public function woocommerce_product_needs_shipping_enable()
+    {
+        return is_cart()?false:true;
+    }
+
 }
 
 $payu_cart_express_checkout = new PayuCartExpressCheckout();

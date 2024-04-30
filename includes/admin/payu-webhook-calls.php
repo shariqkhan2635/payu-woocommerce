@@ -56,19 +56,24 @@ class PayuWebhookCalls
 	private function payuOrderStatusUpdate($response)
 	{
 		global $table_prefix, $wpdb;
-		$response = json_decode($response, true);
-		$payuPaymentValidation = new PayuPaymentValidation();
-		$order = $payuPaymentValidation->payuPaymentValidationAndRedirect($response);
-		if ($order) {
-			$payu_transactions_tblname = "payu_transactions";
-			$payu_id = $response['mihpayid'];
-			$wp_track_payu_transactions_tblname = $table_prefix . "$payu_transactions_tblname";
-			$wpdb->update($wp_track_payu_transactions_tblname, array(
-				'transaction_id' => $payu_id
-			),
-			array(
-				'order_id' => $order->ID
-			));
+		if ($response) {
+			$response = json_decode($response, true);
+			$payuPaymentValidation = new PayuPaymentValidation();
+			$order = $payuPaymentValidation->payuPaymentValidationAndRedirect($response);
+			if ($order) {
+				$payu_transactions_tblname = "payu_transactions";
+				$payu_id = $response['mihpayid'];
+				$wp_track_payu_transactions_tblname = $table_prefix . "$payu_transactions_tblname";
+				$wpdb->update(
+					$wp_track_payu_transactions_tblname,
+					array(
+						'transaction_id' => $payu_id
+					),
+					array(
+						'order_id' => $order->ID
+					)
+				);
+			}
 		}
 	}
 }

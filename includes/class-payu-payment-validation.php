@@ -1,32 +1,34 @@
 <?php
-class PayuPaymentValidation {
+class PayuPaymentValidation
+{
 
-    public $msg;
-    public $currency1PayuSalt;
-    public $bypassVerifyPayment;
-    public $currency1PayuKey;
-    public $gatewayModule;
+	public $msg;
+	public $currency1PayuSalt;
+	public $bypassVerifyPayment;
+	public $currency1PayuKey;
+	public $gatewayModule;
 	public $redirect_page_id;
 
-    public function __construct()
+	public function __construct()
 	{
 
 		$plugin_data = get_option('woocommerce_payubiz_settings');
 		$this->currency1PayuSalt = sanitize_text_field($plugin_data['currency1_payu_salt']);
-        $this->currency1PayuKey = sanitize_text_field($plugin_data['currency1_payu_key']);
+		$this->currency1PayuKey = sanitize_text_field($plugin_data['currency1_payu_key']);
 		$this->redirect_page_id = sanitize_text_field($plugin_data['redirect_page_id']);
-        $this->gatewayModule = $plugin_data['gateway_module'];
-        if (sanitize_text_field($plugin_data['verify_payment']) != "yes") {
+		$this->gatewayModule = $plugin_data['gateway_module'];
+		if (sanitize_text_field($plugin_data['verify_payment']) != "yes") {
 			$this->bypassVerifyPayment = true;
 		}
 	}
 
-    public function payuPaymentValidationAndRedirect($postdata){
-        $order = $this->paymentValidationAndUpdation($postdata);
-        $this->manageMessages();
+	public function payuPaymentValidationAndRedirect($postdata)
+	{
+		$order = $this->paymentValidationAndUpdation($postdata);
+		$this->manageMessages();
 		$redirect_url = $this->getRedirectUrl($order);
 		$this->redirectTo($redirect_url);
-    }
+	}
 
 	public function paymentValidationAndUpdation($postdata, $bypass_verify_payment = false)
 	{
@@ -45,6 +47,9 @@ class PayuPaymentValidation {
 			$order->update_meta_data('payu_bankcode', $postdata['bankcode']);
 			$order->update_meta_data('payu_mode', $postdata['mode']);
 			$transaction_offer = $postdata['transaction_offer'];
+			if (isset($postdata['extra_charges']['carrier_code'])) {
+				$this->update_shipping_method($order, $postdata['extra_charges']['carrier_code']);
+			}
 			$this->reconcileOfferData($transaction_offer, $order);
 			return $this->payuValidatePostData($postdata, $order, $payu_key, $payu_salt);
 		} else {
@@ -52,7 +57,7 @@ class PayuPaymentValidation {
 		}
 	}
 
-    private function manageMessages()
+	private function manageMessages()
 	{
 		if (function_exists('wc_add_notice')) {
 			wc_clear_notices();
@@ -127,12 +132,14 @@ class PayuPaymentValidation {
 				'country' => 'IN',
 				'state' => $postdata['shipping_address']['state'],
 				'city' => $postdata['shipping_address']['city'],
+				'email' => $postdata['shipping_address']['email'],
 				'postcode' => $postdata['shipping_address']['pincode'],
 				'phone' => $postdata['shipping_address']['addressPhoneNumber'],
 				'address_1' => $postdata['shipping_address']['addressLine'],
 				'first_name' => isset($full_name[0]) ? $full_name[0] : '',
 				'last_name' => isset($full_name[1]) ? $full_name[1] : ''
 			);
+			$order->update_meta_data('shipping_email', $postdata['shipping_address']['email']);
 			$order->set_shipping_first_name(isset($full_name[0]) ? $full_name[0] : '');
 			$order->set_address($new_address, 'shipping');
 			$order->set_address($new_address, 'billing');
@@ -245,7 +252,7 @@ class PayuPaymentValidation {
 		return $order;
 	}
 
-    private function reconcileOfferData($transaction_offer, $order)
+	private function reconcileOfferData($transaction_offer, $order)
 	{
 
 		if (!is_array($transaction_offer)) {
@@ -254,11 +261,11 @@ class PayuPaymentValidation {
 		if (isset($transaction_offer['offer_data'])) {
 
 			foreach ($transaction_offer['offer_data'] as $offer_data) {
-				
+
 				if ($offer_data['status'] == 'SUCCESS') {
 					$offer_title = $offer_data['offer_title'];
 					$discount = $offer_data['discount'];
-					if($offer_data['offer_type'] != 'CASHBACK'){
+					if ($offer_data['offer_type'] != 'CASHBACK') {
 						$this->wcUpdateOrderAddDiscount($order, $offer_title, $discount);
 					}
 					$offer_key = $offer_data['offer_key'];
@@ -270,7 +277,7 @@ class PayuPaymentValidation {
 		}
 	}
 
-    private function wcUpdateOrderAddDiscount($order, $title, $amount)
+	private function wcUpdateOrderAddDiscount($order, $title, $amount)
 	{
 		$subtotal = $order->get_subtotal();
 		$optional_fee_exists = false;
@@ -293,6 +300,10 @@ class PayuPaymentValidation {
 			}
 
 			$item->set_name($title);
+			$item->set_total_tax(0);
+			$item->set_tax_class(false);
+			$item->set_tax_status('none');
+			$item->set_taxes(false);
 			$item->set_amount($discount);
 			$item->set_total($discount);
 
@@ -301,12 +312,12 @@ class PayuPaymentValidation {
 			$item_id = $item->get_id();
 			$order->update_meta_data('payu_discount_item_id', $item_id);
 			$order->add_item($item);
-			$order->calculate_totals();
+			$order->calculate_totals(false);
 			$order->save();
 		}
 	}
 
-    // Adding Meta container admin shop_order pages
+	// Adding Meta container admin shop_order pages
 	public function verifyPayment($order, $txnid, $payu_key, $payu_salt, $bypass = false)
 	{
 		$verify_flag = false;
@@ -315,7 +326,7 @@ class PayuPaymentValidation {
 		}
 
 		try {
-            $url = ($this->gatewayModule == 'sandbox') ?
+			$url = ($this->gatewayModule == 'sandbox') ?
 				PAYU_POSTSERVICE_FORM_2_URL_UAT :
 				PAYU_POSTSERVICE_FORM_2_URL_PRODUCTION;
 			$response = $this->sendVerificationRequest($url, $payu_key, $txnid, $payu_salt);
@@ -338,14 +349,13 @@ class PayuPaymentValidation {
 			$transaction_offer = json_decode($transaction_details['transactionOffer']);
 			$this->reconcileOfferData($transaction_offer, $order);
 			$verify_flag = strtolower($transaction_details['status']) == 'success';
-           
 		} catch (Exception $e) {
 			$verify_flag = false;
 		}
 		return $verify_flag;
 	}
 
-    private function sendVerificationRequest($url, $payu_key, $txnid, $payu_salt)
+	private function sendVerificationRequest($url, $payu_key, $txnid, $payu_salt)
 	{
 		$fields = [
 			'key' => sanitize_key($payu_key),
@@ -353,7 +363,7 @@ class PayuPaymentValidation {
 			'var1' => $txnid,
 			'hash' => ''
 		];
-        $hash = hash("sha512", $fields['key'] . '|' . $fields['command'] . '|' . $fields['var1'] . '|' . $payu_salt);
+		$hash = hash("sha512", $fields['key'] . '|' . $fields['command'] . '|' . $fields['var1'] . '|' . $payu_salt);
 		$fields['hash'] = sanitize_text_field($hash);
 		$args = [
 			'body' => $fields,
@@ -366,7 +376,7 @@ class PayuPaymentValidation {
 				'accept' => 'application/json'
 			]
 		];
-        $response = wp_remote_post($url, $args);
+		$response = wp_remote_post($url, $args);
 		$response_code = wp_remote_retrieve_response_code($response);
 		$headerResult = wp_remote_retrieve_headers($response);
 		$args_log = array(
@@ -388,7 +398,51 @@ class PayuPaymentValidation {
 			$args_log['response_data'] = $res;
 			payu_insert_event_logs($args_log);
 		}
-        return $response;
+		return $response;
 	}
 
+
+	private function update_shipping_method($order, $new_method_id)
+	{
+		$calculate_tax_for = array(
+			'country'  => $order->get_shipping_country(),
+			'state'    => $order->get_shipping_state(), // (optional value)
+			'postcode' => $order->get_shipping_postcode(), // (optional value)
+			'city'     => $order->get_shipping_city(), // (optional value)
+		);
+
+		foreach ($order->get_items('shipping') as $item) {
+			$order->remove_item( $item->get_id() );
+		}
+
+		$item = new WC_Order_Item_Shipping();
+		// Retrieve the customer shipping zone
+		$zone_ids = array_keys(array('') + WC_Shipping_Zones::get_zones());
+
+		// Loop through shipping Zones IDs
+		foreach ($zone_ids as $zone_id) {
+			// Get the shipping Zone object
+			$shipping_zone = new WC_Shipping_Zone($zone_id);
+
+			// Get all shipping method values for the shipping zone
+			$shipping_methods = $shipping_zone->get_shipping_methods(true, 'values');
+			// Loop through available shipping methods
+			foreach ($shipping_methods as $shipping_method) {
+				if ($shipping_method->is_enabled() && $shipping_method->get_rate_id() === $new_method_id) {
+
+					// Set an existing shipping method for customer zone
+					$item->set_method_title($shipping_method->get_title());
+					$item->set_method_id($shipping_method->get_rate_id()); // set an existing Shipping method rate ID
+					$item->set_total($shipping_method->cost);
+
+					$item->calculate_taxes($calculate_tax_for);
+					$item->save();
+					break; // stop the loop
+				}
+			}
+		}
+		$order->add_item($item);
+		// Calculate totals and save
+		$order->calculate_totals(); // the save() method is included
+	}
 }

@@ -297,13 +297,15 @@ class PayuPaymentGatewayAPI
                     'Authorization' => 'Bearer ' . $token,
                 );
 
+                $get_state_list = get_state_list();
+		        $state = $get_state_list[$address[$address_type . '_state']];
 
                 // Request body
                 $body = json_encode(array(
                     'merchantId' => $this->payu_merchant_id,
                     "email" => $this->email,
                     'shippingAddress' => array(
-                        'name' => $address[$address_type . '_first_name'] . '' . $address[$address_type . '_last_name'],
+                        'name' => $address[$address_type . '_first_name'] . ' ' . $address[$address_type . '_last_name'],
                         'email' => $address[$address_type . '_email'],
                         'addressLine' => $address[$address_type . '_address_1'],
                         'addressLine2' => $address[$address_type . '_address_2'],
@@ -316,7 +318,7 @@ class PayuPaymentGatewayAPI
                         'village' => '',
                         'pincode' => $address[$address_type . '_postcode'],
                         'city' => $address[$address_type . '_city'],
-                        'state' => $address[$address_type . '_state'],
+                        'state' => $state,
                         'country' => $address[$address_type . '_country'],
                         'tag' => 'Home',
                         'source' => 'woocommerce',
@@ -350,7 +352,6 @@ class PayuPaymentGatewayAPI
                     $response_body = wp_remote_retrieve_body($response);
                     $args_log['response_data'] = $response_body;
                     payu_insert_event_logs($args_log);
-                    error_log('request address payu =' . $body);
                     error_log('save address payu =' . $response_body);
                     error_log('token =' . $token);
                     return json_decode($response_body);
@@ -386,6 +387,8 @@ class PayuPaymentGatewayAPI
                     'Content-Type' => CURL_CONTENT_TYPE_JSON,
                     'Authorization' => 'Bearer ' . $token,
                 );
+                $get_state_list = get_state_list();
+		        $state = $get_state_list[$address[$address_type . '_state']];
 
                 $name = $address[$address_type . '_first_name'] . ' ' . $address[$address_type . '_last_name'];
                 // Request body
@@ -408,7 +411,7 @@ class PayuPaymentGatewayAPI
                         'village' => '',
                         'pincode' => $address[$address_type . '_postcode'],
                         'city' => $address[$address_type . '_city'],
-                        'state' => $address[$address_type . '_state'],
+                        'state' => $state,
                         'country' => $address[$address_type . '_country'],
                         'tag' => 'Home',
                         'source' => 'woocommerce',
@@ -449,7 +452,7 @@ class PayuPaymentGatewayAPI
                 }
             }
         } catch (Throwable $e) {
-            error_log('error =' . $e->getMessage());
+            error_log('error1 =' . $e->getMessage());
             return false;
         }
     }
@@ -502,7 +505,7 @@ class PayuPaymentGatewayAPI
         );
         if (is_wp_error($response)) {
             payu_insert_event_logs($args_log);
-            error_log('error =' . $response->get_error_message());
+            error_log('error2 =' . $response->get_error_message());
             return false;
         } else {
             $response_body = wp_remote_retrieve_body($response);

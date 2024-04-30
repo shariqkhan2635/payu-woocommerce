@@ -116,11 +116,28 @@ function adjust_prices_for_discount($prices, $discount)
 	return $adjustedPrices;
 }
 
-function get_state_code_by_name($state, $country = 'IN')
+function get_state_code_by_name($state)
 {
-	$countries_obj = new WC_Countries();
-	$wc_states_list = $countries_obj->get_states($country);
+	$wc_states_list = get_state_list();
+	$state = payuShippingStateAlias($state);
 	return array_search($state, $wc_states_list);
+}
+
+function get_state_list($country = 'IN'){
+	$countries_obj = new WC_Countries();
+	return $countries_obj->get_states($country);
+}
+
+function payuShippingStateAlias($state){
+	$payuAlias = array(
+		'Lakshadeep' => 'Lakshadweep',
+		'Pondicherry (Puducherry)' => 'Puducherry',
+		'Andaman and Nicobar Islands' => 'Andaman & Nicobar Islands',
+		'Jammu and Kashmir' => 'Jammu & Kashmir',
+		'Dadra and Nagar Haveli' => 'Dadra & Nagar Haveli & Daman & Diu'
+	);
+	$updatedState = array_search($state, $payuAlias);
+	return $updatedState ? $updatedState : $state;
 }
 
 
@@ -302,13 +319,8 @@ function payu_transaction_data_insert($postdata, $order_id)
 
 		$data_array['partner_webhook_success'] = $payu_payment_success_webhook_url;
 		$data_array['partner_webhook_failure'] = $payu_payment_failed_webhook_url;
-
-		if ( check_shipping_methods_setup() ) {
-			$data_array['fetch_dynamic_charges'] = true;
-			$data_array['dynamic_charges_endpoint'] = $site_link;
-		} else {
-			$data_array['fetch_dynamic_charges'] = false;
-		}
+		$data_array['dynamic_charges_endpoint'] = $site_link;
+		$data_array['fetch_dynamic_charges'] = true;
 
 		return $data_array;
 	}

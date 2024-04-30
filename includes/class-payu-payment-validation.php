@@ -47,8 +47,8 @@ class PayuPaymentValidation
 			$order->update_meta_data('payu_bankcode', $postdata['bankcode']);
 			$order->update_meta_data('payu_mode', $postdata['mode']);
 			$transaction_offer = $postdata['transaction_offer'];
-			if (isset($postdata['extra_charges']['method_code'])) {
-				$this->update_shipping_method($order, $postdata['extra_charges']['method_code']);
+			if (isset($postdata['extra_charges']['carrier_code'])) {
+				$this->update_shipping_method($order, $postdata['extra_charges']['carrier_code']);
 			}
 			$this->reconcileOfferData($transaction_offer, $order);
 			return $this->payuValidatePostData($postdata, $order, $payu_key, $payu_salt);
@@ -404,7 +404,6 @@ class PayuPaymentValidation
 
 	private function update_shipping_method($order, $new_method_id)
 	{
-		// Array for tax calculations
 		$calculate_tax_for = array(
 			'country'  => $order->get_shipping_country(),
 			'state'    => $order->get_shipping_state(), // (optional value)
@@ -412,36 +411,38 @@ class PayuPaymentValidation
 			'city'     => $order->get_shipping_city(), // (optional value)
 		);
 
-		// Loop through order shipping items
 		foreach ($order->get_items('shipping') as $item) {
-
-				// Retrieve the customer shipping zone
-				$shipping_zone = WC_Shipping_Zones::get_zone_by('instance_id', $item->get_instance_id());
-
-				// Get an array of available shipping methods for the current shipping zone
-				$shipping_methods = $shipping_zone->get_shipping_methods();
-
-				// Loop through available shipping methods
-				foreach ($shipping_methods as $shipping_method) {
-					// Targeting specific shipping method
-					if ($shipping_method->is_enabled() && $shipping_method->id === $new_method_id) {
-
-						// Set an existing shipping method for customer zone
-						$item->set_method_title($shipping_method->get_title());
-						$item->set_method_id($shipping_method->get_rate_id()); // set an existing Shipping method rate ID
-						$item->set_total($shipping_method->cost);
-
-						$item->calculate_taxes($calculate_tax_for);
-						$item->save();
-						break; // stop the loop
-					}
-				}
-			
+			$order->remove_item( $item->get_id() );
 		}
 
+		$item = new WC_Order_Item_Shipping();
+		// Retrieve the customer shipping zone
+		$zone_ids = array_keys(array('') + WC_Shipping_Zones::get_zones());
 
+		// Loop through shipping Zones IDs
+		foreach ($zone_ids as $zone_id) {
+			// Get the shipping Zone object
+			$shipping_zone = new WC_Shipping_Zone($zone_id);
+
+			// Get all shipping method values for the shipping zone
+			$shipping_methods = $shipping_zone->get_shipping_methods(true, 'values');
+			// Loop through available shipping methods
+			foreach ($shipping_methods as $shipping_method) {
+				if ($shipping_method->is_enabled() && $shipping_method->get_rate_id() === $new_method_id) {
+
+					// Set an existing shipping method for customer zone
+					$item->set_method_title($shipping_method->get_title());
+					$item->set_method_id($shipping_method->get_rate_id()); // set an existing Shipping method rate ID
+					$item->set_total($shipping_method->cost);
+
+					$item->calculate_taxes($calculate_tax_for);
+					$item->save();
+					break; // stop the loop
+				}
+			}
+		}
+		$order->add_item($item);
 		// Calculate totals and save
 		$order->calculate_totals(); // the save() method is included
-
 	}
 }

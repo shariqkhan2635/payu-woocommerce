@@ -47,7 +47,6 @@ class PayuAccountAddressSync extends PayuPaymentGatewayAPI
     }
     public function payu_save_address_callback($user_id, $address, $address_type)
     {
-        error_log('user cron save address =' . serialize($address));
         $result = $this->payu_save_address($address, $address_type, $user_id);
         if ($result && isset($result->status) && $result->status == 1) {
             $this->payu_insert_saved_address($user_id, $result, $address_type);
@@ -56,7 +55,6 @@ class PayuAccountAddressSync extends PayuPaymentGatewayAPI
 
     public function payu_update_address_callback($user_id, $address, $address_type, $payu_address_data)
     {
-        error_log('user cron address =' . serialize($address));
         $this->payu_update_address($address, $address_type, $payu_address_data, $user_id);
     }
 

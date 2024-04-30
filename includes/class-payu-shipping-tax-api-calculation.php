@@ -59,7 +59,7 @@ class PayuShippingTaxApiCalc
         }
         $response_code = $response['status'] == 'false' ? 400 : 200;
         error_log('shipping api call response ' . json_encode($response));
-        return new WP_REST_Response($response, $response_code);
+        return new WP_REST_Response($response, $response_code); 
     }
 
     private function handleValidToken($parameters, $email, $txnid)
@@ -210,7 +210,7 @@ class PayuShippingTaxApiCalc
                         $shipping_data[$shipping_method_count]['grand_total']   = WC()->cart->get_subtotal() + $shipping_rate->get_cost() + $tax_amount;
                         $shipping_method_count++;
                     }
-                } else {
+                } else if(WC()->cart->get_tax_totals()){
                     foreach (WC()->cart->get_tax_totals() as $tax) {
                         $tax_amount   = $tax->amount + $tax_amount;
                     }
@@ -300,8 +300,8 @@ class PayuShippingTaxApiCalc
             return $stored_token;
         }
 
-        $token = wp_generate_password(12, false); // Generate a secure password
-        $hashed_token = wp_hash_password($token); // Hash the password securely
+        $random_bytes = random_bytes(50);
+		$hashed_token = bin2hex($random_bytes);
 
         // Set the expiration time to 24 hours from now
         $expiration = time() + 24 * 60 * 60;

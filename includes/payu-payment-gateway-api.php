@@ -352,7 +352,6 @@ class PayuPaymentGatewayAPI
                     $response_body = wp_remote_retrieve_body($response);
                     $args_log['response_data'] = $response_body;
                     payu_insert_event_logs($args_log);
-                    error_log('request address payu =' . $body);
                     error_log('save address payu =' . $response_body);
                     error_log('token =' . $token);
                     return json_decode($response_body);
